@@ -1,0 +1,88 @@
+name: radio88-cadastros
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: radio88-cadastros-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-radio88_cadastros}
+      POSTGRES_USER: ${POSTGRES_USER:-radio88_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-radio88_dev_password}
+      TZ: America/Sao_Paulo
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - radio88_cadastros_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-radio88_user} -d ${POSTGRES_DB:-radio88_cadastros}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - radio88_cadastros_private
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: radio88-cadastros-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3010
+      DATABASE_URL: postgresql://${POSTGRES_USER:-radio88_user}:${POSTGRES_PASSWORD:-radio88_dev_password}@postgres:5432/${POSTGRES_DB:-radio88_cadastros}
+      DATABASE_SSL: "false"
+      DATABASE_POOL_MAX: 10
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 2h
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5174,http://localhost:8082,http://127.0.0.1:8082}
+      REGISTRATION_RATE_LIMIT_PER_MINUTE: 5
+      LOGIN_RATE_LIMIT_PER_MINUTE: 5
+      IP_HASH_SECRET: ${IP_HASH_SECRET}
+      EXPORT_MAX_ROWS: 50000
+      ADMIN_INITIAL_NAME: ${ADMIN_INITIAL_NAME:-Administrador Radio 88}
+      ADMIN_INITIAL_USERNAME: ${ADMIN_INITIAL_USERNAME:-admin}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD}
+      CAMPAIGN_SLUG: lancamento-institucional-2026
+      CAMPAIGN_NAME: Lancamento do Site Institucional - 1 de Agosto
+      CAMPAIGN_STARTS_AT: "2026-07-01T00:00:00-03:00"
+      CAMPAIGN_ENDS_AT: "2026-08-31T23:59:59-03:00"
+      PRIVACY_NOTICE_VERSION: "2026-08-01"
+      PRIVACY_NOTICE_URL: /privacidade
+    command:
+      [
+        "sh",
+        "-c",
+        "node dist/src/database/migrate.js && node dist/src/database/seed.js && node dist/src/server.js",
+      ]
+    ports:
+      - "127.0.0.1:3010:3010"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3010/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - radio88_cadastros_private
+
+networks:
+  radio88_cadastros_private:
+    driver: bridge
+
+volumes:
+  radio88_cadastros_data:
