@@ -10,6 +10,25 @@ export const campaignIdParamsSchema = z.object({
   id: z.uuid(),
 });
 
+export const placementParamsSchema = z.object({
+  placementKey: z
+    .string()
+    .trim()
+    .min(3)
+    .max(80)
+    .regex(/^[a-z0-9_:-]+$/),
+});
+
+export const publishCampaignSchema = z.object({
+  placementKey: z
+    .string()
+    .trim()
+    .min(3)
+    .max(80)
+    .regex(/^[a-z0-9_:-]+$/)
+    .default("institutional_modal"),
+});
+
 const campaignFields = {
   slug: z
     .string()
@@ -21,6 +40,7 @@ const campaignFields = {
   title: z.string().trim().min(3).max(180),
   description: z.string().trim().min(3).max(1_000),
   status: campaignStatusSchema,
+  type: z.enum(["registration", "sweepstake", "engagement"]).default("registration"),
   startsAt: z.iso.datetime({ offset: true }),
   endsAt: z.iso.datetime({ offset: true }).nullable().optional(),
   privacyNoticeVersion: z.string().trim().min(1).max(30),

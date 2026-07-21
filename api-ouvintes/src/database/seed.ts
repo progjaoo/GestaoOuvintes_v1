@@ -2,7 +2,7 @@ import argon2 from "argon2";
 import { eq } from "drizzle-orm";
 import { env } from "../config/env.js";
 import { db, pool } from "./client.js";
-import { adminUsers, campaigns } from "./schema.js";
+import { adminUsers, campaigns, campaignPlacements } from "./schema.js";
 
 async function seed(): Promise<void> {
   const username = env.ADMIN_INITIAL_USERNAME.trim().toLocaleLowerCase("pt-BR");
@@ -33,18 +33,33 @@ async function seed(): Promise<void> {
   });
 
   if (!existingCampaign) {
-    await db.insert(campaigns).values({
+    const [campaign] = await db.insert(campaigns).values({
       slug: env.CAMPAIGN_SLUG,
       name: env.CAMPAIGN_NAME,
       title: "Faca parte da historia da Radio 88 FM",
       description: "Cadastre-se para participar desta nova fase da Radio 88 FM.",
       status: "active",
+      type: "registration",
       startsAt: new Date(env.CAMPAIGN_STARTS_AT),
       endsAt: env.CAMPAIGN_ENDS_AT ? new Date(env.CAMPAIGN_ENDS_AT) : null,
       privacyNoticeVersion: env.PRIVACY_NOTICE_VERSION,
       privacyNoticeUrl: env.PRIVACY_NOTICE_URL,
-    });
+    }).returning();
+    if (!campaign) {
+      throw new Error("Falha ao criar campanha inicial.");
+    }
+    await db.insert(campaignPlacements).values({
+      placementKey: "institutional_modal",
+      campaignId: campaign.id,
+      publishedAt: new Date(),
+    }).onConflictDoNothing();
     console.info("Campanha inicial criada.");
+  } else if (existingCampaign.status === "active") {
+    await db.insert(campaignPlacements).values({
+      placementKey: "institutional_modal",
+      campaignId: existingCampaign.id,
+      publishedAt: new Date(),
+    }).onConflictDoNothing();
   }
 }
 

@@ -1,5 +1,6 @@
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
+import multipart from "@fastify/multipart";
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -9,11 +10,45 @@ import { AppError } from "./lib/errors.js";
 import { adminAuthRoutes } from "./routes/admin-auth.js";
 import { adminCampaignRoutes } from "./routes/admin-campaigns.js";
 import { adminRegistrationRoutes } from "./routes/admin-registrations.js";
+import { adminInstitutionalBannerRoutes } from "./routes/admin-institutional-banners.js";
 import { healthRoutes } from "./routes/health.js";
 import { publicRoutes } from "./routes/public.js";
+import { publicInstitutionalBannerRoutes } from "./routes/public-institutional-banners.js";
+
+function isDevelopmentLocalOrigin(origin: string) {
+  if (env.NODE_ENV !== "development") return false;
+
+  try {
+    const { protocol, hostname } = new URL(origin);
+    if (protocol !== "http:" && protocol !== "https:") return false;
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "192.168.70.87") return true;
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+
+    const private172 = hostname.match(/^172\.(\d{1,2})\.\d{1,3}\.\d{1,3}$/);
+    if (private172) {
+      const secondOctet = Number(private172[1]);
+      return secondOctet >= 16 && secondOctet <= 31;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
 
 function isErrorRecord(error: unknown): error is Record<string, unknown> {
   return typeof error === "object" && error !== null;
+}
+
+function getPostgresErrorCode(error: unknown): string | undefined {
+  if (!isErrorRecord(error)) return undefined;
+
+  if (typeof error.code === "string") {
+    return error.code;
+  }
+
+  return getPostgresErrorCode(error.cause);
 }
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -36,6 +71,7 @@ export async function buildApp(): Promise<FastifyInstance> {
           },
     bodyLimit: 32 * 1024,
     trustProxy: true,
+    routerOptions: { ignoreTrailingSlash: true },
   });
 
   app.setNotFoundHandler((_request, reply) =>
@@ -60,19 +96,32 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
 
     if (error instanceof AppError) {
+      const cause = error.cause instanceof Error ? error.cause : undefined;
+      request.log.warn(
+        {
+          requestId: request.id,
+          code: error.code,
+          statusCode: error.statusCode,
+          errorName: error.name,
+          causeName: cause?.name,
+          causeMessage: env.NODE_ENV === "production" ? undefined : cause?.message,
+        },
+        "Erro operacional tratado.",
+      );
       return reply.code(error.statusCode).send({
         statusCode: error.statusCode,
         code: error.code,
         message: error.message,
+        requestId: request.id,
         ...(error.details !== undefined && { details: error.details }),
       });
     }
 
-    if (isErrorRecord(error) && error.code === "23505") {
+    if (getPostgresErrorCode(error) === "23505") {
       return reply.code(409).send({
         statusCode: 409,
         code: "RESOURCE_CONFLICT",
-        message: "Ja existe um registro com esses dados unicos.",
+        message: "Ja existe um registro com esses dados unicos. Verifique o slug informado.",
       });
     }
 
@@ -109,15 +158,29 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(cors, {
     origin(origin, callback) {
-      if (!origin || env.corsAllowedOrigins.includes(origin)) {
+      if (
+        !origin ||
+        env.corsAllowedOrigins.includes(origin) ||
+        isDevelopmentLocalOrigin(origin)
+      ) {
         callback(null, true);
         return;
       }
 
       callback(new AppError(403, "ORIGIN_NOT_ALLOWED", "Origem nao autorizada."), false);
     },
-    methods: ["GET", "POST", "PUT", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Device-Token",
+      "X-Platform",
+      "Idempotency-Key",
+    ],
+  });
+
+  await app.register(multipart, {
+    limits: { files: 1, fileSize: env.INSTITUTIONAL_BANNER_MAX_BYTES },
   });
 
   await app.register(rateLimit, {
@@ -136,10 +199,16 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(healthRoutes);
   await app.register(publicRoutes, { prefix: "/api/public" });
+  await app.register(publicInstitutionalBannerRoutes, {
+    prefix: "/api/public/institutional-banners",
+  });
   await app.register(adminAuthRoutes, { prefix: "/api/admin/auth" });
   await app.register(adminCampaignRoutes, { prefix: "/api/admin/campaigns" });
   await app.register(adminRegistrationRoutes, {
     prefix: "/api/admin/listener-registrations",
+  });
+  await app.register(adminInstitutionalBannerRoutes, {
+    prefix: "/api/admin/institutional-banners",
   });
 
   return app;

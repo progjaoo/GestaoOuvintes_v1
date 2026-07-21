@@ -3,11 +3,15 @@ import { requireAdminRole, requireAuthentication } from "../plugins/auth.js";
 import {
   campaignIdParamsSchema,
   createCampaignSchema,
+  placementParamsSchema,
+  publishCampaignSchema,
   updateCampaignSchema,
 } from "../schemas/campaign.js";
 import {
   createCampaign,
+  listPlacements,
   listCampaigns,
+  publishCampaignToPlacement,
   updateCampaign,
 } from "../services/campaign-service.js";
 
@@ -17,6 +21,25 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
   app.get("/", async () => ({
     items: await listCampaigns(),
   }));
+
+  app.get("/placements/list", async () => ({
+    items: await listPlacements(),
+  }));
+
+  app.post(
+    "/placements/:placementKey/unpublish",
+    {
+      preHandler: requireAdminRole,
+    },
+    async (request, reply) => {
+      // Endpoint reservado para a proxima etapa do painel; mantido fora para evitar comportamento parcial.
+      placementParamsSchema.parse(request.params);
+      return reply.code(501).send({
+        code: "NOT_IMPLEMENTED",
+        message: "Despublicacao sera liberada na proxima etapa.",
+      });
+    },
+  );
 
   app.post(
     "/",
@@ -39,6 +62,22 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
       const { id } = campaignIdParamsSchema.parse(request.params);
       const input = updateCampaignSchema.parse(request.body);
       return updateCampaign(id, input);
+    },
+  );
+
+  app.post(
+    "/:id/publish",
+    {
+      preHandler: requireAdminRole,
+    },
+    async (request) => {
+      const { id } = campaignIdParamsSchema.parse(request.params);
+      const input = publishCampaignSchema.parse(request.body);
+      return publishCampaignToPlacement({
+        campaignId: id,
+        placementKey: input.placementKey,
+        adminUserId: request.user.sub,
+      });
     },
   );
 };

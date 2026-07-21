@@ -5,6 +5,7 @@ import {
   CalendarRange,
   Edit3,
   Plus,
+  Send,
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -30,6 +31,8 @@ const statusPresentation: Record<
   closed: { label: "Encerrada", tone: "gray" },
 };
 
+const INSTITUTIONAL_MODAL_PLACEMENT = "institutional_modal";
+
 export function CampaignsPage() {
   usePageTitle("Campanhas");
   const { user } = useAuth();
@@ -42,22 +45,67 @@ export function CampaignsPage() {
     queryFn: api.listCampaigns,
   });
 
+  const placementsQuery = useQuery({
+    queryKey: ["campaign-placements"],
+    queryFn: api.listCampaignPlacements,
+  });
+
+  const institutionalPlacement = placementsQuery.data?.items.find(
+    (placement) => placement.placementKey === INSTITUTIONAL_MODAL_PLACEMENT,
+  );
+
   const saveMutation = useMutation({
-    mutationFn: async (input: CampaignInput) => {
-      if (selectedCampaign) {
-        return api.updateCampaign(selectedCampaign.id, input);
+    mutationFn: async ({
+      input,
+      publishInInstitutionalModal,
+    }: {
+      input: CampaignInput;
+      publishInInstitutionalModal: boolean;
+    }) => {
+      const campaign = selectedCampaign
+        ? await api.updateCampaign(selectedCampaign.id, input)
+        : await api.createCampaign(input);
+
+      if (publishInInstitutionalModal && campaign.status === "active") {
+        await api.publishCampaign(campaign.id, INSTITUTIONAL_MODAL_PLACEMENT);
       }
-      return api.createCampaign(input);
+
+      return { campaign, published: publishInInstitutionalModal && campaign.status === "active" };
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["campaigns"] });
-      toast.success(selectedCampaign ? "Campanha atualizada." : "Campanha criada.");
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["campaign-placements"] }),
+      ]);
+      if (result.published) {
+        toast.success("Campanha salva e publicada no modal do institucional.");
+      } else {
+        toast.success(selectedCampaign ? "Campanha atualizada." : "Campanha criada.");
+      }
       setDialogOpen(false);
       setSelectedCampaign(null);
     },
     onError: (error) => {
       toast.error(
         error instanceof ApiError ? error.message : "Não foi possível salvar a campanha.",
+      );
+    },
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: (campaignId: string) => api.publishCampaign(campaignId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["campaign-placements"] }),
+      ]);
+      toast.success("Campanha publicada no modal do institucional.");
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof ApiError
+          ? error.message
+          : "Não foi possível publicar a campanha.",
       );
     },
   });
@@ -117,6 +165,8 @@ export function CampaignsPage() {
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {campaignsQuery.data?.items.map((campaign) => {
               const presentation = statusPresentation[campaign.status];
+              const isPublishedInInstitutionalModal =
+                institutionalPlacement?.campaignId === campaign.id;
               return (
                 <article
                   key={campaign.id}
@@ -126,7 +176,12 @@ export function CampaignsPage() {
                     <div className="grid h-11 w-11 place-items-center rounded-lg bg-genesis-text text-white">
                       <CalendarRange className="h-5 w-5" />
                     </div>
-                    <Badge tone={presentation.tone}>{presentation.label}</Badge>
+                    <div className="flex flex-col items-end gap-2">
+                      <Badge tone={presentation.tone}>{presentation.label}</Badge>
+                      {isPublishedInInstitutionalModal && (
+                        <Badge tone="blue">Publicada no institucional</Badge>
+                      )}
+                    </div>
                   </div>
                   <h2 className="mt-5 font-display text-xl font-semibold text-genesis-text">
                     {campaign.name}
@@ -152,14 +207,27 @@ export function CampaignsPage() {
                     </p>
                   </div>
                   {user?.role === "admin" && (
-                    <Button
-                      variant="outline"
-                      className="mt-5 w-full"
-                      onClick={() => openEdit(campaign)}
-                    >
-                      <Edit3 className="h-4 w-4" />
-                      Editar campanha
-                    </Button>
+                    <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => openEdit(campaign)}
+                      >
+                        <Edit3 className="h-4 w-4" />
+                        Editar
+                      </Button>
+                      <Button
+                        className="w-full"
+                        onClick={() => publishMutation.mutate(campaign.id)}
+                        disabled={
+                          campaign.status !== "active" ||
+                          publishMutation.isPending || isPublishedInInstitutionalModal
+                        }
+                      >
+                        <Send className="h-4 w-4" />
+                        {isPublishedInInstitutionalModal ? "Publicada" : "Publicar"}
+                      </Button>
+                    </div>
                   )}
                 </article>
               );
@@ -172,13 +240,18 @@ export function CampaignsPage() {
         <CampaignFormDialog
           open={dialogOpen}
           campaign={selectedCampaign}
+          publishedInInstitutionalModal={
+            selectedCampaign
+              ? institutionalPlacement?.campaignId === selectedCampaign.id
+              : true
+          }
           submitting={saveMutation.isPending}
           onOpenChange={(open) => {
             setDialogOpen(open);
             if (!open) setSelectedCampaign(null);
           }}
-          onSubmit={async (input) => {
-            await saveMutation.mutateAsync(input);
+          onSubmit={async (input, options) => {
+            await saveMutation.mutateAsync({ input, ...options });
           }}
         />
       )}

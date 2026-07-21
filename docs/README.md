@@ -15,8 +15,10 @@ Tipo: WEB/API.
 - [Banco de dados](database.md)
 - [Seguranca e privacidade](security-privacy.md)
 - [Ambiente de desenvolvimento](development.md)
+- [Setup local](setup-local.md)
 - [Testes e qualidade](testing-quality.md)
 - [Deploy e operacao](deployment-operations.md)
+- [Cloudflare R2 para banners institucionais](cloudflare-r2-banners.md)
 - [Guidelines de contribuicao](contribution-guidelines.md)
 - [Mobile First](mobile-first.md)
 

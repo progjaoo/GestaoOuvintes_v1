@@ -7,7 +7,7 @@ export const createRegistrationSchema = z.object({
   name: z.string().trim().min(2).max(160),
   neighborhood: z.string().trim().min(2).max(120),
   city: z.string().trim().min(2).max(120),
-  phone: z.string().trim().max(30).nullable().optional(),
+  phone: z.string().trim().min(8).max(30),
   submissionToken: z.uuid(),
   privacyNoticeVersion: z.string().trim().min(1).max(30),
   privacyAcknowledged: z.literal(true),
@@ -24,6 +24,47 @@ export const createRegistrationSchema = z.object({
       content: optionalTrackingField,
     })
     .optional(),
+});
+
+export const placementKeySchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(80)
+  .regex(/^[a-z0-9_:-]+$/);
+
+export const publicPlatformSchema = z.enum([
+  "web_mobile",
+  "web_desktop",
+  "web_tablet",
+  "expo_ios",
+  "expo_android",
+]);
+
+export const resolvePublicSessionSchema = z.object({
+  placement: placementKeySchema,
+  platform: publicPlatformSchema,
+});
+
+export const createRegistrationAndParticipationSchema = createRegistrationSchema
+  .omit({
+    campaignSlug: true,
+    submissionToken: true,
+    source: true,
+  })
+  .extend({
+    campaignId: z.uuid(),
+    source: z.enum(["web", "expo", "receptionist", "import"]).default("web"),
+    submissionToken: z.uuid().optional(),
+  });
+
+export const campaignParticipationParamsSchema = z.object({
+  campaignId: z.uuid(),
+});
+
+export const updateDeviceStateSchema = z.object({
+  dismissedUntil: z.iso.datetime({ offset: true }).nullable().optional(),
+  incrementOpenCount: z.boolean().optional(),
 });
 
 export const registrationIdParamsSchema = z.object({

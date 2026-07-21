@@ -27,6 +27,10 @@ describeIntegration("API integrada com PostgreSQL", () => {
       WHERE slug = 'lancamento-institucional-2026'
     `);
     await db.execute(sql`DELETE FROM registration_export_audit`);
+    await db.execute(sql`DELETE FROM campaign_device_state`);
+    await db.execute(sql`DELETE FROM campaign_participation`);
+    await db.execute(sql`DELETE FROM listener_device`);
+    await db.execute(sql`DELETE FROM listener_profile`);
     await db.execute(sql`DELETE FROM listener_registration`);
     app = await buildApp();
   });
@@ -57,13 +61,14 @@ describeIntegration("API integrada com PostgreSQL", () => {
     });
   });
 
-  it("cria cadastro sem telefone e impede duplicacao por idempotencia", async () => {
+  it("cria cadastro com telefone obrigatorio e impede duplicacao por idempotencia", async () => {
     const submissionToken = randomUUID();
     const payload = {
       campaignSlug: "lancamento-institucional-2026",
       name: "  Maria   da Silva ",
       neighborhood: "Retiro",
       city: "Volta Redonda",
+      phone: "24999990000",
       submissionToken,
       privacyNoticeVersion: "2026-08-01",
       privacyAcknowledged: true,
@@ -104,6 +109,7 @@ describeIntegration("API integrada com PostgreSQL", () => {
         name: "Joao",
         neighborhood: "Centro",
         city: "Barra Mansa",
+        phone: "(24) 99999-9999",
         submissionToken: randomUUID(),
         privacyNoticeVersion: "antiga",
         privacyAcknowledged: true,
@@ -208,6 +214,107 @@ describeIntegration("API integrada com PostgreSQL", () => {
 
     expect(updated.statusCode).toBe(200);
     expect(updated.json().status).toBe("paused");
+
+    const duplicated = await app!.inject({
+      method: "POST",
+      url: "/api/admin/campaigns",
+      headers,
+      payload: {
+        slug,
+        name: "Campanha duplicada",
+        title: "Titulo duplicado",
+        description: "Descricao duplicada",
+        status: "draft",
+        startsAt: "2026-09-01T00:00:00-03:00",
+        endsAt: "2026-09-30T23:59:59-03:00",
+        privacyNoticeVersion: "2026-09-01",
+        privacyNoticeUrl: "/privacidade",
+      },
+    });
+
+    expect(duplicated.statusCode).toBe(409);
+    expect(duplicated.json()).toMatchObject({
+      code: "RESOURCE_CONFLICT",
+    });
+  });
+
+  it("publica campanha no modal institucional e resolve sessao publica por device token", async () => {
+    const headers = { authorization: `Bearer ${accessToken}` };
+    const slug = `campanha-modal-${Date.now()}`;
+    const created = await app!.inject({
+      method: "POST",
+      url: "/api/admin/campaigns",
+      headers,
+      payload: {
+        slug,
+        name: "Campanha do modal",
+        title: "Participe do sorteio",
+        description: "Cadastro para ouvintes do institucional.",
+        status: "active",
+        startsAt: new Date(Date.now() - 60_000).toISOString(),
+        endsAt: new Date(Date.now() + 86_400_000).toISOString(),
+        privacyNoticeVersion: "2026-09-01",
+        privacyNoticeUrl: "/privacidade",
+      },
+    });
+
+    expect(created.statusCode).toBe(201);
+
+    const published = await app!.inject({
+      method: "POST",
+      url: `/api/admin/campaigns/${created.json().id}/publish`,
+      headers,
+      payload: { placementKey: "institutional_modal" },
+    });
+
+    expect(published.statusCode).toBe(200);
+    expect(published.json()).toMatchObject({
+      campaignId: created.json().id,
+      placementKey: "institutional_modal",
+    });
+
+    const placements = await app!.inject({
+      method: "GET",
+      url: "/api/admin/campaigns/placements/list",
+      headers,
+    });
+
+    expect(placements.statusCode).toBe(200);
+    expect(placements.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          campaignId: created.json().id,
+          placementKey: "institutional_modal",
+          campaignSlug: slug,
+          campaignStatus: "active",
+        }),
+      ]),
+    );
+
+    const session = await app!.inject({
+      method: "POST",
+      url: "/api/public/session/resolve",
+      headers: {
+        "x-device-token": "a".repeat(64),
+        "x-platform": "web_desktop",
+      },
+      payload: {
+        placement: "institutional_modal",
+        platform: "web_desktop",
+      },
+    });
+
+    expect(session.statusCode).toBe(200);
+    expect(session.json()).toMatchObject({
+      placement: "institutional_modal",
+      campaign: {
+        id: created.json().id,
+        slug,
+        active: true,
+      },
+      listenerState: "anonymous",
+      experience: "anonymous_registration_required",
+    });
   });
 
   it("lista, detalha e exporta cadastros com auditoria", async () => {

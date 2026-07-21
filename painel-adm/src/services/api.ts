@@ -6,11 +6,15 @@ import type {
   BootstrapStatusResponse,
   Campaign,
   CampaignInput,
+  CampaignPlacement,
   LoginResponse,
   PaginatedResponse,
   RegistrationDetail,
   RegistrationFilters,
   RegistrationListItem,
+  InstitutionalBanner,
+  InstitutionalBannerAsset,
+  InstitutionalBannerInput,
 } from "@/types/api";
 
 const API_URL = (import.meta.env.VITE_CADASTROS_API_URL ?? "http://127.0.0.1:3010")
@@ -38,7 +42,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
 
-  if (options.body && !headers.has("Content-Type")) {
+  if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -167,6 +171,12 @@ export const api = {
     return request<{ items: Campaign[] }>("/api/admin/campaigns");
   },
 
+  listCampaignPlacements() {
+    return request<{ items: CampaignPlacement[] }>(
+      "/api/admin/campaigns/placements/list",
+    );
+  },
+
   createCampaign(input: CampaignInput) {
     return request<Campaign>("/api/admin/campaigns", {
       method: "POST",
@@ -179,6 +189,63 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input),
     });
+  },
+
+  publishCampaign(id: string, placementKey = "institutional_modal") {
+    return request<{ placementKey: string; campaignId: string; version: number }>(
+      `/api/admin/campaigns/${id}/publish`,
+      {
+        method: "POST",
+        body: JSON.stringify({ placementKey }),
+      },
+    );
+  },
+
+  listInstitutionalBanners() {
+    return request<{ items: InstitutionalBanner[] }>(
+      "/api/admin/institutional-banners?placement=home_hero",
+    );
+  },
+
+  uploadInstitutionalBannerAsset(file: File) {
+    const body = new FormData();
+    body.append("file", file);
+    return request<InstitutionalBannerAsset>("/api/admin/institutional-banners/assets", {
+      method: "POST",
+      body,
+    });
+  },
+
+  createInstitutionalBanner(input: InstitutionalBannerInput) {
+    return request<InstitutionalBanner>("/api/admin/institutional-banners", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateInstitutionalBanner(id: string, input: Partial<InstitutionalBannerInput>) {
+    return request<InstitutionalBanner>("/api/admin/institutional-banners/" + id, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+
+  setInstitutionalBannerActive(id: string, active: boolean) {
+    return request<InstitutionalBanner>(
+      "/api/admin/institutional-banners/" + id + (active ? "/activate" : "/deactivate"),
+      { method: "POST" },
+    );
+  },
+
+  reorderInstitutionalBanners(orderedIds: string[]) {
+    return request<void>("/api/admin/institutional-banners/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ placementKey: "home_hero", orderedIds }),
+    });
+  },
+
+  deleteInstitutionalBanner(id: string) {
+    return request<void>("/api/admin/institutional-banners/" + id, { method: "DELETE" });
   },
 
   listRegistrations(filters: RegistrationFilters) {

@@ -2,6 +2,7 @@ import { useState, type PropsWithChildren } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   CalendarRange,
+  Images,
   Headphones,
   LogOut,
   Menu,
@@ -25,12 +26,21 @@ const navigation = [
     path: "/campanhas",
     icon: CalendarRange,
   },
+  {
+    label: "Banners institucionais",
+    path: "/banners-institucionais",
+    icon: Images,
+    adminOnly: true,
+  },
 ];
 
 function NavigationLinks({ onNavigate }: { onNavigate?: () => void }) {
+  const { user } = useAuth();
+  const visibleNavigation = navigation.filter((item) => !("adminOnly" in item) || !item.adminOnly || user?.role === "admin");
+
   return (
     <nav aria-label="Navegação principal" className="space-y-1">
-      {navigation.map(({ label, path, icon: Icon }) => (
+      {visibleNavigation.map(({ label, path, icon: Icon }) => (
         <NavLink
           key={path}
           to={path}

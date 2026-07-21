@@ -19,6 +19,7 @@ interface CampaignFormState {
   privacyNoticeVersion: string;
   privacyNoticeUrl: string;
   termsUrl: string;
+  publishInInstitutionalModal: boolean;
 }
 
 const emptyForm: CampaignFormState = {
@@ -32,9 +33,10 @@ const emptyForm: CampaignFormState = {
   privacyNoticeVersion: "",
   privacyNoticeUrl: "/privacidade",
   termsUrl: "",
+  publishInInstitutionalModal: true,
 };
 
-function campaignToForm(campaign: Campaign): CampaignFormState {
+function campaignToForm(campaign: Campaign, publishedInInstitutionalModal: boolean): CampaignFormState {
   return {
     slug: campaign.slug,
     name: campaign.name,
@@ -46,28 +48,35 @@ function campaignToForm(campaign: Campaign): CampaignFormState {
     privacyNoticeVersion: campaign.privacyNoticeVersion,
     privacyNoticeUrl: campaign.privacyNoticeUrl,
     termsUrl: campaign.termsUrl ?? "",
+    publishInInstitutionalModal: publishedInInstitutionalModal,
   };
 }
 
 export function CampaignFormDialog({
   open,
   campaign,
+  publishedInInstitutionalModal,
   submitting,
   onOpenChange,
   onSubmit,
 }: {
   open: boolean;
   campaign: Campaign | null;
+  publishedInInstitutionalModal: boolean;
   submitting: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (input: CampaignInput) => Promise<void>;
+  onSubmit: (input: CampaignInput, options: { publishInInstitutionalModal: boolean }) => Promise<void>;
 }) {
   const [form, setForm] = useState<CampaignFormState>(() =>
-    campaign ? campaignToForm(campaign) : emptyForm,
+    campaign ? campaignToForm(campaign, publishedInInstitutionalModal) : emptyForm,
   );
   const [error, setError] = useState("");
 
   const update = (field: keyof CampaignFormState, value: string) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const updateBoolean = (field: keyof CampaignFormState, value: boolean) => {
     setForm((current) => ({ ...current, [field]: value }));
   };
 
@@ -98,18 +107,32 @@ export function CampaignFormDialog({
       return;
     }
 
-    await onSubmit({
-      slug: form.slug,
-      name: form.name,
-      title: form.title,
-      description: form.description,
-      status: form.status,
-      startsAt: dateTimeLocalToIso(form.startsAt),
-      endsAt: form.endsAt ? dateTimeLocalToIso(form.endsAt) : null,
-      privacyNoticeVersion: form.privacyNoticeVersion,
-      privacyNoticeUrl: form.privacyNoticeUrl,
-      termsUrl: form.termsUrl || null,
-    });
+    try {
+      await onSubmit(
+        {
+          slug: form.slug,
+          name: form.name,
+          title: form.title,
+          description: form.description,
+          status: form.status,
+          startsAt: dateTimeLocalToIso(form.startsAt),
+          endsAt: form.endsAt ? dateTimeLocalToIso(form.endsAt) : null,
+          privacyNoticeVersion: form.privacyNoticeVersion,
+          privacyNoticeUrl: form.privacyNoticeUrl,
+          termsUrl: form.termsUrl || null,
+        },
+        {
+          publishInInstitutionalModal:
+            form.status === "active" && form.publishInInstitutionalModal,
+        },
+      );
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "Não foi possível salvar a campanha.",
+      );
+    }
   };
 
   return (
@@ -181,6 +204,30 @@ export function CampaignFormDialog({
             <option value="closed">Encerrada</option>
           </Select>
         </Field>
+        <div className="rounded-xl border border-genesis-border bg-indigo-50 p-4 sm:col-span-2">
+          <label className="flex items-start gap-3 text-sm font-semibold text-genesis-text">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-genesis-border text-genesis-primary focus:ring-genesis-primary"
+              checked={form.publishInInstitutionalModal}
+              onChange={(event) =>
+                updateBoolean("publishInInstitutionalModal", event.target.checked)
+              }
+              disabled={form.status !== "active"}
+            />
+            <span>
+              Publicar no modal do institucional
+              <span className="mt-1 block font-normal leading-5 text-genesis-muted">
+                Quando a campanha estiver ativa, esta opcao faz o site institucional exibir o modal para visitantes elegiveis.
+              </span>
+            </span>
+          </label>
+          {form.status !== "active" && (
+            <p className="mt-3 text-xs font-semibold text-genesis-muted">
+              Para publicar no site, altere o status para Ativa.
+            </p>
+          )}
+        </div>
         <Field label="Versão do aviso *" htmlFor="campaign-privacy-version">
           <Input
             id="campaign-privacy-version"

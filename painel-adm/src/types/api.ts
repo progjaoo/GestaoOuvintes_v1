@@ -1,5 +1,6 @@
 export type AdminRole = "admin" | "viewer";
 export type CampaignStatus = "draft" | "active" | "paused" | "closed";
+export type CampaignType = "registration" | "sweepstake" | "engagement";
 
 export interface AdminUser {
   id: string;
@@ -33,6 +34,7 @@ export interface Campaign {
   title: string;
   description: string;
   status: CampaignStatus;
+  type?: CampaignType;
   startsAt: string;
   endsAt: string | null;
   privacyNoticeVersion: string;
@@ -40,6 +42,18 @@ export interface Campaign {
   termsUrl: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CampaignPlacement {
+  id: string;
+  placementKey: string;
+  campaignId: string | null;
+  version: number;
+  publishedAt: string | null;
+  updatedAt: string;
+  campaignName: string | null;
+  campaignSlug: string | null;
+  campaignStatus: CampaignStatus | null;
 }
 
 export interface RegistrationListItem {
@@ -95,6 +109,7 @@ export interface CampaignInput {
   title: string;
   description: string;
   status: CampaignStatus;
+  type?: CampaignType;
   startsAt: string;
   endsAt?: string | null;
   privacyNoticeVersion: string;
@@ -110,4 +125,43 @@ export interface ApiErrorPayload {
     path: string;
     message: string;
   }>;
+}
+
+export interface InstitutionalBannerAsset {
+  id: string;
+  imageUrl: string;
+  originalName: string;
+  mimeType: string;
+  byteSize: number;
+  width: number;
+  height: number;
+}
+
+export interface InstitutionalBanner {
+  id: string;
+  title: string;
+  altText: string;
+  placementKey: string;
+  mediaAssetId: string;
+  destinationUrl: string | null;
+  openInNewTab: boolean;
+  displayOrder: number;
+  active: boolean;
+  imageUrl: string | null;
+  objectKey: string;
+  width: number;
+  height: number;
+  byteSize: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InstitutionalBannerInput {
+  title: string;
+  altText: string;
+  placementKey: string;
+  mediaAssetId: string;
+  destinationUrl: string | null;
+  openInNewTab: boolean;
+  active: boolean;
 }

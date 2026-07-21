@@ -14,21 +14,27 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:migrate": "tsx src/database/migrate.ts",
     "db:seed": "tsx src/database/seed.ts",
+    "r2:check": "tsx scripts/check-r2.ts",
+    "banner:check": "tsx scripts/check-banner-flow.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "RUN_INTEGRATION_TESTS=true vitest run tests/integration"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1091.0",
     "@fastify/cors": "^11.1.0",
     "@fastify/helmet": "^13.0.2",
     "@fastify/jwt": "^10.0.0",
+    "@fastify/multipart": "^10.1.0",
     "@fastify/rate-limit": "^10.3.0",
     "argon2": "^0.44.0",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
     "fastify": "^5.6.2",
+    "file-type": "^22.0.1",
     "pg": "^8.16.3",
+    "sharp": "^0.35.3",
     "zod": "^4.1.12"
   },
   "devDependencies": {
