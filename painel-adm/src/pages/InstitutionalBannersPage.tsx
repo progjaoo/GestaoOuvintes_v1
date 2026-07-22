@@ -164,6 +164,11 @@ export function InstitutionalBannersPage() {
           <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 sm:flex-row sm:items-center sm:justify-between">
             <span>
               R2 configurado para o bucket <span className="font-mono">{storage.bucketName}</span> em <span className="font-mono">{storage.objectPrefix}</span>.
+              {storage.diagnostics && (
+                <span className="mt-1 block text-xs text-emerald-700">
+                  Diagnóstico: account termina em <span className="font-mono">{storage.diagnostics.accountIdTail ?? "-"}</span>, access key termina em <span className="font-mono">{storage.diagnostics.accessKeyIdTail ?? "-"}</span>, secret hash <span className="font-mono">{storage.diagnostics.secretKeyFingerprint ?? "-"}</span>, URL pública <span className="font-mono">{storage.diagnostics.publicBaseUrlHost ?? "-"}</span>.
+                </span>
+              )}
             </span>
             <Button
               type="button"

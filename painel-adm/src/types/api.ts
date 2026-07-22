@@ -137,6 +137,14 @@ export interface InstitutionalBannerStorageStatus {
   secretKeyConfigured: boolean;
   publicBaseUrlConfigured: boolean;
   credentialsConfigured: boolean;
+  diagnostics?: {
+    accountIdTail: string | null;
+    accessKeyIdTail: string | null;
+    secretKeyFingerprint: string | null;
+    publicBaseUrlHost: string | null;
+    bucketNameFingerprint: string | null;
+    objectPrefixFingerprint: string | null;
+  };
   ready: boolean;
 }
 

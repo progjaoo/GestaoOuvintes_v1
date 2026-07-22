@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { env } from "../../config/env.js";
 import { AppError } from "../../lib/errors.js";
@@ -41,6 +41,25 @@ export function normalizeR2StorageError(
   );
 }
 
+function safeEnvFingerprint(value: string | undefined) {
+  if (!value) return null;
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
+function safeTail(value: string | undefined) {
+  if (!value) return null;
+  return value.slice(-6);
+}
+
+function getPublicBaseUrlHost(value: string | undefined) {
+  if (!value) return null;
+  try {
+    return new URL(value).host;
+  } catch {
+    return "URL_INVALIDA";
+  }
+}
+
 export function getMediaStorageStatus() {
   const sanitizedPrefix = env.R2_OBJECT_PREFIX.replace(/^\/+|\/+$/g, "");
 
@@ -55,6 +74,14 @@ export function getMediaStorageStatus() {
     credentialsConfigured: Boolean(
       env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY,
     ),
+    diagnostics: {
+      accountIdTail: safeTail(env.R2_ACCOUNT_ID),
+      accessKeyIdTail: safeTail(env.R2_ACCESS_KEY_ID),
+      secretKeyFingerprint: safeEnvFingerprint(env.R2_SECRET_ACCESS_KEY),
+      publicBaseUrlHost: getPublicBaseUrlHost(env.R2_PUBLIC_BASE_URL),
+      bucketNameFingerprint: safeEnvFingerprint(env.R2_BUCKET_NAME),
+      objectPrefixFingerprint: safeEnvFingerprint(sanitizedPrefix),
+    },
     ready: Boolean(
       env.MEDIA_STORAGE_DRIVER === "r2" &&
         env.R2_ACCOUNT_ID &&
