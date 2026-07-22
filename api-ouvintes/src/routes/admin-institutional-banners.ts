@@ -20,7 +20,10 @@ import {
   updateInstitutionalBanner,
   uploadInstitutionalBannerAsset,
 } from "../services/institutional-banner-service.js";
-import { createMediaStorage } from "../services/media-storage/r2-media-storage.js";
+import {
+  createMediaStorage,
+  getMediaStorageStatus,
+} from "../services/media-storage/r2-media-storage.js";
 
 export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", requireAuthentication);
@@ -33,21 +36,56 @@ export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) =>
     return { items: await listAdminInstitutionalBanners(placement) };
   });
 
+  app.get("/storage/check", { preHandler: canUpload }, async () => ({
+    storage: getMediaStorageStatus(),
+  }));
+
   app.post(
     "/assets",
     { bodyLimit: env.INSTITUTIONAL_BANNER_MAX_BYTES + 64 * 1024, preHandler: canUpload },
     async (request, reply) => {
-      const part = await request.file({
-        limits: { files: 1, fileSize: env.INSTITUTIONAL_BANNER_MAX_BYTES },
-      });
-      if (!part) throw new AppError(400, "FILE_REQUIRED", "Selecione uma imagem.");
-      const asset = await uploadInstitutionalBannerAsset({
-        buffer: await part.toBuffer(),
-        filename: part.filename,
-        adminUserId: request.user.sub,
-        storage: createMediaStorage(),
-      });
-      return reply.code(201).send(asset);
+      let filename = "arquivo-nao-informado";
+      let mimeType = "tipo-nao-informado";
+
+      try {
+        const part = await request.file({
+          limits: { files: 1, fileSize: env.INSTITUTIONAL_BANNER_MAX_BYTES },
+        });
+        if (!part) throw new AppError(400, "FILE_REQUIRED", "Selecione uma imagem.");
+
+        filename = part.filename;
+        mimeType = part.mimetype;
+
+        const asset = await uploadInstitutionalBannerAsset({
+          buffer: await part.toBuffer(),
+          filename: part.filename,
+          adminUserId: request.user.sub,
+          storage: createMediaStorage(),
+        });
+        return reply.code(201).send(asset);
+      } catch (error) {
+        const safeError = error instanceof AppError
+          ? {
+              code: error.code,
+              statusCode: error.statusCode,
+              message: error.message,
+              details: error.details,
+            }
+          : error instanceof Error
+            ? { name: error.name, message: error.message }
+            : { message: String(error) };
+
+        request.log.error(
+          {
+            error: safeError,
+            filename,
+            mimeType,
+            storage: getMediaStorageStatus(),
+          },
+          "Falha no upload de banner institucional",
+        );
+        throw error;
+      }
     },
   );
 

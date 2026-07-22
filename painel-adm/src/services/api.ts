@@ -15,6 +15,7 @@ import type {
   InstitutionalBanner,
   InstitutionalBannerAsset,
   InstitutionalBannerInput,
+  InstitutionalBannerStorageStatus,
 } from "@/types/api";
 
 const API_URL = (import.meta.env.VITE_CADASTROS_API_URL ?? "http://127.0.0.1:3010")
@@ -204,6 +205,12 @@ export const api = {
   listInstitutionalBanners() {
     return request<{ items: InstitutionalBanner[] }>(
       "/api/admin/institutional-banners?placement=home_hero",
+    );
+  },
+
+  checkInstitutionalBannerStorage() {
+    return request<{ storage: InstitutionalBannerStorageStatus }>(
+      "/api/admin/institutional-banners/storage/check",
     );
   },
 

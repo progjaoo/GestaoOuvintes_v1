@@ -18,6 +18,7 @@ Tipo: WEB/API.
 - [Setup local](setup-local.md)
 - [Testes e qualidade](testing-quality.md)
 - [Deploy e operacao](deployment-operations.md)
+- [Plano de publicacao Vercel/Neon](plans/plano-publicacao.md)
 - [Cloudflare R2 para banners institucionais](cloudflare-r2-banners.md)
 - [Guidelines de contribuicao](contribution-guidelines.md)
 - [Mobile First](mobile-first.md)

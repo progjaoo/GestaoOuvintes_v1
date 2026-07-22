@@ -26,8 +26,10 @@ const bannerErrorMessages: Record<string, string> = {
   INVALID_IMAGE_TYPE: "Selecione uma imagem JPEG, PNG, WebP ou AVIF válida.",
   INVALID_IMAGE: "A imagem está corrompida ou não pôde ser processada.",
   IMAGE_TOO_LARGE: "A imagem deve ter no máximo 10 MiB.",
-  MEDIA_STORAGE_NOT_CONFIGURED: "O armazenamento R2 não está configurado neste ambiente.",
-  R2_UPLOAD_FAILED: "O R2 não recebeu a imagem. Tente novamente.",
+  FILE_REQUIRED: "Selecione uma imagem antes de salvar o banner.",
+  MEDIA_PUBLIC_URL_NOT_CONFIGURED: "Configure R2_PUBLIC_BASE_URL para gerar a URL pública do banner.",
+  MEDIA_STORAGE_NOT_CONFIGURED: "O armazenamento R2 não está configurado neste ambiente. Revise MEDIA_STORAGE_DRIVER, R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY e R2_PUBLIC_BASE_URL no Vercel.",
+  R2_UPLOAD_FAILED: "O R2 recusou o upload. Verifique bucket, permissões da Access Key e Account ID no Vercel.",
 };
 
 function errorMessage(error: unknown) {
@@ -48,7 +50,13 @@ export function InstitutionalBannersPage() {
     queryKey: ["institutional-banners"],
     queryFn: api.listInstitutionalBanners,
   });
+  const storageQuery = useQuery({
+    queryKey: ["institutional-banner-storage"],
+    queryFn: api.checkInstitutionalBannerStorage,
+    retry: false,
+  });
   const items = useMemo(() => bannersQuery.data?.items ?? [], [bannersQuery.data]);
+  const storage = storageQuery.data?.storage;
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["institutional-banners"] });
@@ -114,6 +122,20 @@ export function InstitutionalBannersPage() {
         <div className="rounded-xl border border-genesis-border bg-indigo-50 p-4 text-sm text-genesis-muted">
           As imagens são otimizadas pela API e armazenadas no Cloudflare R2. Formatos aceitos: JPEG, PNG, WebP e AVIF, até 10 MiB.
         </div>
+
+        {storageQuery.isError ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            Não foi possível validar a configuração do R2: {errorMessage(storageQuery.error)}
+          </div>
+        ) : storage && !storage.ready ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            R2 incompleto neste ambiente. Confirme MEDIA_STORAGE_DRIVER=r2, credenciais, R2_PUBLIC_BASE_URL, bucket e prefixo nas Environment Variables do Vercel.
+          </div>
+        ) : storage?.ready ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            R2 configurado para o bucket <span className="font-mono">{storage.bucketName}</span> em <span className="font-mono">{storage.objectPrefix}</span>.
+          </div>
+        ) : null}
 
         {bannersQuery.isLoading ? (
           <LoadingBlock />

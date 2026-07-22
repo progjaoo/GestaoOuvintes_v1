@@ -1,7 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
+  "installCommand": "cd painel-adm && npm install",
+  "buildCommand": "cd painel-adm && npm run build",
+  "outputDirectory": "painel-adm/dist",
   "rewrites": [
     {
       "source": "/(.*)",

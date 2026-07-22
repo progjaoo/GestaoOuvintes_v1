@@ -127,6 +127,18 @@ export interface ApiErrorPayload {
   }>;
 }
 
+export interface InstitutionalBannerStorageStatus {
+  driver: "disabled" | "r2";
+  bucketName: string;
+  objectPrefix: string;
+  accountIdConfigured: boolean;
+  accessKeyConfigured: boolean;
+  secretKeyConfigured: boolean;
+  publicBaseUrlConfigured: boolean;
+  credentialsConfigured: boolean;
+  ready: boolean;
+}
+
 export interface InstitutionalBannerAsset {
   id: string;
   imageUrl: string;

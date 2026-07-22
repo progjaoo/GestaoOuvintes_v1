@@ -19,6 +19,31 @@ export function normalizeR2StorageError(
   );
 }
 
+export function getMediaStorageStatus() {
+  const sanitizedPrefix = env.R2_OBJECT_PREFIX.replace(/^\/+|\/+$/g, "");
+
+  return {
+    driver: env.MEDIA_STORAGE_DRIVER,
+    bucketName: env.R2_BUCKET_NAME,
+    objectPrefix: sanitizedPrefix,
+    accountIdConfigured: Boolean(env.R2_ACCOUNT_ID),
+    accessKeyConfigured: Boolean(env.R2_ACCESS_KEY_ID),
+    secretKeyConfigured: Boolean(env.R2_SECRET_ACCESS_KEY),
+    publicBaseUrlConfigured: Boolean(env.R2_PUBLIC_BASE_URL),
+    credentialsConfigured: Boolean(
+      env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY,
+    ),
+    ready: Boolean(
+      env.MEDIA_STORAGE_DRIVER === "r2" &&
+        env.R2_ACCOUNT_ID &&
+        env.R2_ACCESS_KEY_ID &&
+        env.R2_SECRET_ACCESS_KEY &&
+        env.R2_PUBLIC_BASE_URL &&
+        env.R2_BUCKET_NAME,
+    ),
+  };
+}
+
 export class R2MediaStorage implements MediaStorage {
   private readonly client: S3Client;
 
