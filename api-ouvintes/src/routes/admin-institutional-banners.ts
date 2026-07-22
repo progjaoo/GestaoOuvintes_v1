@@ -23,7 +23,6 @@ import {
 import {
   createMediaStorage,
   getMediaStorageStatus,
-  verifyR2WriteAccess,
 } from "../services/media-storage/r2-media-storage.js";
 
 export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) => {
@@ -39,11 +38,6 @@ export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) =>
 
   app.get("/storage/check", { preHandler: canUpload }, async () => ({
     storage: getMediaStorageStatus(),
-  }));
-
-  app.post("/storage/write-check", { preHandler: canUpload }, async () => ({
-    storage: getMediaStorageStatus(),
-    writeCheck: await verifyR2WriteAccess(),
   }));
 
   app.post(

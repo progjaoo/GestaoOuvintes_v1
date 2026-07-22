@@ -69,13 +69,7 @@ export function InstitutionalBannersPage() {
     queryKey: ["institutional-banners"],
     queryFn: api.listInstitutionalBanners,
   });
-  const storageQuery = useQuery({
-    queryKey: ["institutional-banner-storage"],
-    queryFn: api.checkInstitutionalBannerStorage,
-    retry: false,
-  });
   const items = useMemo(() => bannersQuery.data?.items ?? [], [bannersQuery.data]);
-  const storage = storageQuery.data?.storage;
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["institutional-banners"] });
@@ -101,16 +95,6 @@ export function InstitutionalBannersPage() {
     onSuccess: async () => {
       await refresh();
       toast.success("Banner removido.");
-    },
-    onError: (error) => toast.error(errorMessage(error)),
-  });
-
-  const writeCheckMutation = useMutation({
-    mutationFn: api.checkInstitutionalBannerStorageWrite,
-    onSuccess: (result) => {
-      toast.success(
-        `Escrita no R2 validada em ${result.writeCheck.bucketName}/${result.writeCheck.objectPrefix}.`,
-      );
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
@@ -152,34 +136,6 @@ export function InstitutionalBannersPage() {
           As imagens são otimizadas pela API e armazenadas no Cloudflare R2. Formatos aceitos: JPEG, PNG, WebP e AVIF, até 10 MiB.
         </div>
 
-        {storageQuery.isError ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            Não foi possível validar a configuração do R2: {errorMessage(storageQuery.error)}
-          </div>
-        ) : storage && !storage.ready ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            R2 incompleto neste ambiente. Confirme MEDIA_STORAGE_DRIVER=r2, credenciais, R2_PUBLIC_BASE_URL, bucket e prefixo nas Environment Variables do Vercel.
-          </div>
-        ) : storage?.ready ? (
-          <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 sm:flex-row sm:items-center sm:justify-between">
-            <span>
-              R2 configurado para o bucket <span className="font-mono">{storage.bucketName}</span> em <span className="font-mono">{storage.objectPrefix}</span>.
-              {storage.diagnostics && (
-                <span className="mt-1 block text-xs text-emerald-700">
-                  Diagnóstico: account termina em <span className="font-mono">{storage.diagnostics.accountIdTail ?? "-"}</span>, access key termina em <span className="font-mono">{storage.diagnostics.accessKeyIdTail ?? "-"}</span>, secret hash <span className="font-mono">{storage.diagnostics.secretKeyFingerprint ?? "-"}</span>, URL pública <span className="font-mono">{storage.diagnostics.publicBaseUrlHost ?? "-"}</span>.
-                </span>
-              )}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => writeCheckMutation.mutate()}
-              disabled={writeCheckMutation.isPending}
-            >
-              {writeCheckMutation.isPending ? "Testando..." : "Testar escrita R2"}
-            </Button>
-          </div>
-        ) : null}
 
         {bannersQuery.isLoading ? (
           <LoadingBlock />
@@ -233,11 +189,6 @@ export function InstitutionalBannersPage() {
                   <p className="mt-1 line-clamp-2 text-sm text-genesis-muted">
                     {banner.altText}
                   </p>
-                  {banner.objectKey && (
-                    <p className="mt-2 break-all font-mono text-xs text-genesis-muted">
-                      {banner.objectKey}
-                    </p>
-                  )}
                   {banner.destinationUrl && (
                     <a
                       href={banner.destinationUrl}

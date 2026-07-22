@@ -128,32 +128,6 @@ export interface ApiErrorPayload {
   details?: Record<string, unknown>;
 }
 
-export interface InstitutionalBannerStorageStatus {
-  driver: "disabled" | "r2";
-  bucketName: string;
-  objectPrefix: string;
-  accountIdConfigured: boolean;
-  accessKeyConfigured: boolean;
-  secretKeyConfigured: boolean;
-  publicBaseUrlConfigured: boolean;
-  credentialsConfigured: boolean;
-  diagnostics?: {
-    accountIdTail: string | null;
-    accessKeyIdTail: string | null;
-    secretKeyFingerprint: string | null;
-    publicBaseUrlHost: string | null;
-    bucketNameFingerprint: string | null;
-    objectPrefixFingerprint: string | null;
-  };
-  ready: boolean;
-}
-
-export interface InstitutionalBannerStorageWriteCheck {
-  bucketName: string;
-  objectPrefix: string;
-  key: string;
-  etag: string | null;
-}
 
 export interface InstitutionalBannerAsset {
   id: string;
