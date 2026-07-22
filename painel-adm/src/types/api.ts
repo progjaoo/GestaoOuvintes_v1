@@ -140,6 +140,13 @@ export interface InstitutionalBannerStorageStatus {
   ready: boolean;
 }
 
+export interface InstitutionalBannerStorageWriteCheck {
+  bucketName: string;
+  objectPrefix: string;
+  key: string;
+  etag: string | null;
+}
+
 export interface InstitutionalBannerAsset {
   id: string;
   imageUrl: string;

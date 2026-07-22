@@ -105,6 +105,16 @@ export function InstitutionalBannersPage() {
     onError: (error) => toast.error(errorMessage(error)),
   });
 
+  const writeCheckMutation = useMutation({
+    mutationFn: api.checkInstitutionalBannerStorageWrite,
+    onSuccess: (result) => {
+      toast.success(
+        `Escrita no R2 validada em ${result.writeCheck.bucketName}/${result.writeCheck.objectPrefix}.`,
+      );
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+
   const move = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= items.length) return;
@@ -151,8 +161,18 @@ export function InstitutionalBannersPage() {
             R2 incompleto neste ambiente. Confirme MEDIA_STORAGE_DRIVER=r2, credenciais, R2_PUBLIC_BASE_URL, bucket e prefixo nas Environment Variables do Vercel.
           </div>
         ) : storage?.ready ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-            R2 configurado para o bucket <span className="font-mono">{storage.bucketName}</span> em <span className="font-mono">{storage.objectPrefix}</span>.
+          <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              R2 configurado para o bucket <span className="font-mono">{storage.bucketName}</span> em <span className="font-mono">{storage.objectPrefix}</span>.
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => writeCheckMutation.mutate()}
+              disabled={writeCheckMutation.isPending}
+            >
+              {writeCheckMutation.isPending ? "Testando..." : "Testar escrita R2"}
+            </Button>
           </div>
         ) : null}
 

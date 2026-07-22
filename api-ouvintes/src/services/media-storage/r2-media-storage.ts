@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { env } from "../../config/env.js";
 import { AppError } from "../../lib/errors.js";
@@ -62,6 +63,30 @@ export function getMediaStorageStatus() {
         env.R2_PUBLIC_BASE_URL &&
         env.R2_BUCKET_NAME,
     ),
+  };
+}
+
+export async function verifyR2WriteAccess() {
+  const storage = createMediaStorage();
+  const prefix = env.R2_OBJECT_PREFIX.replace(/^\/+|\/+$/g, "");
+  const key = [prefix, "health", `vercel-write-check-${randomUUID()}.txt`]
+    .filter(Boolean)
+    .join("/");
+
+  const uploaded = await storage.put({
+    key,
+    body: Buffer.from("radio88-r2-write-check", "utf8"),
+    contentType: "text/plain; charset=utf-8",
+    cacheControl: "no-store",
+  });
+
+  await storage.delete(key);
+
+  return {
+    bucketName: env.R2_BUCKET_NAME,
+    objectPrefix: prefix,
+    key,
+    etag: uploaded.etag,
   };
 }
 

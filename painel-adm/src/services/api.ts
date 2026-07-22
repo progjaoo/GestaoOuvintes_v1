@@ -16,6 +16,7 @@ import type {
   InstitutionalBannerAsset,
   InstitutionalBannerInput,
   InstitutionalBannerStorageStatus,
+  InstitutionalBannerStorageWriteCheck,
 } from "@/types/api";
 
 const API_URL = (import.meta.env.VITE_CADASTROS_API_URL ?? "http://127.0.0.1:3010")
@@ -214,6 +215,15 @@ export const api = {
     return request<{ storage: InstitutionalBannerStorageStatus }>(
       "/api/admin/institutional-banners/storage/check",
     );
+  },
+
+  checkInstitutionalBannerStorageWrite() {
+    return request<{
+      storage: InstitutionalBannerStorageStatus;
+      writeCheck: InstitutionalBannerStorageWriteCheck;
+    }>("/api/admin/institutional-banners/storage/write-check", {
+      method: "POST",
+    });
   },
 
   uploadInstitutionalBannerAsset(file: File) {
