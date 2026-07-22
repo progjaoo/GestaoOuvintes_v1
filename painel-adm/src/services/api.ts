@@ -29,6 +29,7 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly fields?: ApiErrorPayload["fields"],
+    public readonly details?: ApiErrorPayload["details"],
   ) {
     super(message);
     this.name = "ApiError";
@@ -79,6 +80,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       payload?.code ?? "REQUEST_FAILED",
       payload?.message ?? "Não foi possível concluir a operação.",
       payload?.fields,
+      payload?.details,
     );
   }
 

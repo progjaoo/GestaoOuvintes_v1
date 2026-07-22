@@ -125,6 +125,7 @@ export interface ApiErrorPayload {
     path: string;
     message: string;
   }>;
+  details?: Record<string, unknown>;
 }
 
 export interface InstitutionalBannerStorageStatus {

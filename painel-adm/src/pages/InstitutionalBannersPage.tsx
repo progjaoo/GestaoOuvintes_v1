@@ -32,9 +32,28 @@ const bannerErrorMessages: Record<string, string> = {
   R2_UPLOAD_FAILED: "O R2 recusou o upload. Verifique bucket, permissões da Access Key e Account ID no Vercel.",
 };
 
+function getR2DiagnosticSuffix(error: ApiError) {
+  if (error.code !== "R2_UPLOAD_FAILED" && error.code !== "R2_DELETE_FAILED") {
+    return "";
+  }
+
+  const details = error.details ?? {};
+  const providerCode = typeof details.providerCode === "string" ? details.providerCode : null;
+  const errorName = typeof details.errorName === "string" ? details.errorName : null;
+  const httpStatusCode = typeof details.httpStatusCode === "number" ? details.httpStatusCode : null;
+  const requestId = typeof details.requestId === "string" ? details.requestId : null;
+  const diagnostics = [
+    providerCode || errorName ? `R2: ${providerCode || errorName}` : null,
+    httpStatusCode ? `HTTP ${httpStatusCode}` : null,
+    requestId ? `request ${requestId}` : null,
+  ].filter(Boolean);
+
+  return diagnostics.length ? ` (${diagnostics.join(" · ")})` : "";
+}
+
 function errorMessage(error: unknown) {
   if (error instanceof ApiError) {
-    return bannerErrorMessages[error.code] ?? error.message;
+    return `${bannerErrorMessages[error.code] ?? error.message}${getR2DiagnosticSuffix(error)}`;
   }
   return error instanceof Error ? error.message : "Não foi possível concluir a operação.";
 }

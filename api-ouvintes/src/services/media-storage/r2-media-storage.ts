@@ -3,6 +3,27 @@ import { env } from "../../config/env.js";
 import { AppError } from "../../lib/errors.js";
 import type { MediaStorage } from "./media-storage.js";
 
+function normalizeR2Cause(cause: unknown) {
+  if (!(cause instanceof Error)) {
+    return { provider: "r2", errorMessage: String(cause) };
+  }
+
+  const metadata = (cause as { $metadata?: Record<string, unknown> }).$metadata;
+  const code = (cause as { Code?: unknown; code?: unknown }).Code ??
+    (cause as { code?: unknown }).code;
+
+  return {
+    provider: "r2",
+    errorName: cause.name,
+    errorMessage: cause.message,
+    providerCode: typeof code === "string" ? code : undefined,
+    httpStatusCode: typeof metadata?.httpStatusCode === "number"
+      ? metadata.httpStatusCode
+      : undefined,
+    requestId: typeof metadata?.requestId === "string" ? metadata.requestId : undefined,
+  };
+}
+
 export function normalizeR2StorageError(
   operation: "put" | "delete",
   cause: unknown,
@@ -14,7 +35,7 @@ export function normalizeR2StorageError(
     isUpload
       ? "Nao foi possivel armazenar a imagem."
       : "Nao foi possivel remover a imagem do armazenamento.",
-    { provider: "r2", operation },
+    { operation, ...normalizeR2Cause(cause) },
     { cause },
   );
 }
