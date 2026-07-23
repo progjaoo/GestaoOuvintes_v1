@@ -39,7 +39,18 @@ export function sourceLabel(value: string): string {
   const labels: Record<string, string> = {
     institutional_web: "Site institucional",
     institutional_mobile: "Site mobile",
+    web: "Site institucional",
+    expo: "Aplicativo",
+    receptionist: "Recepção",
+    import: "Importação",
     admin_import: "Importação administrativa",
   };
   return labels[value] ?? value;
+}
+
+export function whatsappUrl(value: string | null): string | null {
+  if (!value) return null;
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 10) return null;
+  return `https://wa.me/55${digits}`;
 }

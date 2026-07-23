@@ -64,3 +64,16 @@ export const updateCampaignSchema = z
   .refine((data) => Object.keys(data).length > 0, {
     message: "Informe ao menos um campo para atualizar.",
   });
+
+export const campaignListQuerySchema = z.object({
+  q: z.string().trim().max(180).optional(),
+  status: campaignStatusSchema.optional(),
+  type: z.enum(["registration", "sweepstake", "engagement"]).optional(),
+  startDate: z.iso.datetime({ offset: true }).optional(),
+  endDate: z.iso.datetime({ offset: true }).optional(),
+  activeToday: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
+  sortBy: z.enum(["createdAt", "startsAt", "endsAt", "name"]).default("createdAt"),
+  sortDirection: z.enum(["asc", "desc"]).default("desc"),
+});
+
+export type CampaignListFilters = z.infer<typeof campaignListQuerySchema>;

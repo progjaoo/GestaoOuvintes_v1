@@ -1,50 +1,77 @@
 import { useState } from "react";
-import { ChevronDown, Filter, RotateCcw, Search } from "lucide-react";
+import { ChevronDown, Filter, RotateCcw, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import type { Campaign } from "@/types/api";
+import type { Campaign, RegistrationSortBy, SortDirection } from "@/types/api";
 
 export interface RegistrationFilterForm {
   campaignId: string;
-  name: string;
+  q: string;
   city: string;
   neighborhood: string;
   startDate: string;
   endDate: string;
   hasPhone: "" | "true" | "false";
+  sortBy: RegistrationSortBy;
+  sortDirection: SortDirection;
 }
 
 export const emptyRegistrationFilters: RegistrationFilterForm = {
   campaignId: "",
-  name: "",
+  q: "",
   city: "",
   neighborhood: "",
   startDate: "",
   endDate: "",
   hasPhone: "",
+  sortBy: "createdAt",
+  sortDirection: "desc",
 };
+
+function getActiveFilterLabels(value: RegistrationFilterForm, campaigns: Campaign[]) {
+  const labels: Array<{ key: keyof RegistrationFilterForm; label: string }> = [];
+  const campaign = campaigns.find((item) => item.id === value.campaignId);
+
+  if (campaign) labels.push({ key: "campaignId", label: `Campanha: ${campaign.name}` });
+  if (value.q.trim()) labels.push({ key: "q", label: `Busca: ${value.q.trim()}` });
+  if (value.city.trim()) labels.push({ key: "city", label: `Cidade: ${value.city.trim()}` });
+  if (value.neighborhood.trim()) labels.push({ key: "neighborhood", label: `Bairro: ${value.neighborhood.trim()}` });
+  if (value.startDate) labels.push({ key: "startDate", label: `Desde: ${value.startDate}` });
+  if (value.endDate) labels.push({ key: "endDate", label: `Até: ${value.endDate}` });
+  if (value.hasPhone) {
+    labels.push({ key: "hasPhone", label: value.hasPhone === "true" ? "Com telefone" : "Sem telefone" });
+  }
+
+  return labels;
+}
 
 export function RegistrationFiltersPanel({
   value,
   campaigns,
   activeCount,
   onChange,
-  onApply,
   onClear,
 }: {
   value: RegistrationFilterForm;
   campaigns: Campaign[];
   activeCount: number;
   onChange: (value: RegistrationFilterForm) => void;
-  onApply: () => void;
   onClear: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const activeLabels = getActiveFilterLabels(value, campaigns);
 
   const update = (field: keyof RegistrationFilterForm, fieldValue: string) => {
     onChange({ ...value, [field]: fieldValue });
+  };
+
+  const removeFilter = (field: keyof RegistrationFilterForm) => {
+    onChange({
+      ...value,
+      [field]: emptyRegistrationFilters[field],
+    });
   };
 
   return (
@@ -61,12 +88,12 @@ export function RegistrationFiltersPanel({
           </div>
           <div>
             <h2 className="font-display text-base font-semibold text-genesis-text">
-              Filtros
+              Filtros inteligentes
             </h2>
             <p className="text-xs text-genesis-muted">
               {activeCount > 0
-                ? `${activeCount} filtro${activeCount > 1 ? "s" : ""} aplicado${activeCount > 1 ? "s" : ""}`
-                : "Refine os cadastros exibidos"}
+                ? `${activeCount} filtro${activeCount > 1 ? "s" : ""} ativo${activeCount > 1 ? "s" : ""} · atualização automática`
+                : "Digite ou selecione: a lista atualiza sozinha"}
             </p>
           </div>
         </div>
@@ -78,14 +105,26 @@ export function RegistrationFiltersPanel({
       </button>
 
       <div className={`${expanded ? "block" : "hidden"} border-t border-genesis-border p-4 sm:p-5 lg:block`}>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr_1fr_1fr] xl:grid-cols-[1.6fr_1fr_1fr_1fr_1fr]">
+          <Field label="Busca geral" htmlFor="filter-q">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-genesis-neutral" />
+              <Input
+                id="filter-q"
+                value={value.q}
+                onChange={(event) => update("q", event.target.value)}
+                placeholder="Nome, bairro, cidade, telefone ou campanha"
+                className="pl-9"
+              />
+            </div>
+          </Field>
           <Field label="Campanha" htmlFor="campaign">
             <Select
               id="campaign"
               value={value.campaignId}
               onChange={(event) => update("campaignId", event.target.value)}
             >
-              <option value="">Todas as campanhas</option>
+              <option value="">Todas</option>
               {campaigns.map((campaign) => (
                 <option key={campaign.id} value={campaign.id}>
                   {campaign.name}
@@ -93,20 +132,12 @@ export function RegistrationFiltersPanel({
               ))}
             </Select>
           </Field>
-          <Field label="Nome" htmlFor="filter-name">
-            <Input
-              id="filter-name"
-              value={value.name}
-              onChange={(event) => update("name", event.target.value)}
-              placeholder="Buscar ouvinte"
-            />
-          </Field>
           <Field label="Cidade" htmlFor="filter-city">
             <Input
               id="filter-city"
               value={value.city}
               onChange={(event) => update("city", event.target.value)}
-              placeholder="Ex.: Volta Redonda"
+              placeholder="Volta Redonda"
             />
           </Field>
           <Field label="Bairro" htmlFor="filter-neighborhood">
@@ -114,8 +145,19 @@ export function RegistrationFiltersPanel({
               id="filter-neighborhood"
               value={value.neighborhood}
               onChange={(event) => update("neighborhood", event.target.value)}
-              placeholder="Ex.: Retiro"
+              placeholder="Retiro"
             />
+          </Field>
+          <Field label="Telefone" htmlFor="filter-phone">
+            <Select
+              id="filter-phone"
+              value={value.hasPhone}
+              onChange={(event) => update("hasPhone", event.target.value)}
+            >
+              <option value="">Todos</option>
+              <option value="true">Com telefone</option>
+              <option value="false">Sem telefone</option>
+            </Select>
           </Field>
           <Field label="Data inicial" htmlFor="filter-start">
             <Input
@@ -133,27 +175,56 @@ export function RegistrationFiltersPanel({
               onChange={(event) => update("endDate", event.target.value)}
             />
           </Field>
-          <Field label="Telefone" htmlFor="filter-phone">
+          <Field label="Ordenar por" htmlFor="filter-sort-by">
             <Select
-              id="filter-phone"
-              value={value.hasPhone}
-              onChange={(event) => update("hasPhone", event.target.value)}
+              id="filter-sort-by"
+              value={value.sortBy}
+              onChange={(event) => update("sortBy", event.target.value)}
             >
-              <option value="">Todos</option>
-              <option value="true">Com telefone</option>
-              <option value="false">Sem telefone</option>
+              <option value="createdAt">Data do cadastro</option>
+              <option value="name">Nome</option>
+              <option value="city">Cidade</option>
             </Select>
           </Field>
-          <div className="flex items-end gap-2">
-            <Button className="flex-1" onClick={onApply}>
-              <Search className="h-4 w-4" />
-              Aplicar
-            </Button>
-            <Button variant="outline" size="icon" aria-label="Limpar filtros" onClick={onClear}>
+          <Field label="Direção" htmlFor="filter-sort-direction">
+            <Select
+              id="filter-sort-direction"
+              value={value.sortDirection}
+              onChange={(event) => update("sortDirection", event.target.value)}
+            >
+              <option value="desc">Mais recente / Z-A</option>
+              <option value="asc">Mais antigo / A-Z</option>
+            </Select>
+          </Field>
+          <div className="flex items-end">
+            <Button
+              variant="outline"
+              className="w-full"
+              aria-label="Limpar filtros"
+              onClick={onClear}
+              disabled={activeCount === 0}
+            >
               <RotateCcw className="h-4 w-4" />
+              Limpar
             </Button>
           </div>
         </div>
+
+        {activeLabels.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {activeLabels.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                className="inline-flex items-center gap-2 rounded-full border border-genesis-border bg-genesis-bg px-3 py-1.5 text-xs font-semibold text-genesis-muted transition hover:border-genesis-primary/40 hover:text-genesis-text"
+                onClick={() => removeFilter(filter.key)}
+              >
+                {filter.label}
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

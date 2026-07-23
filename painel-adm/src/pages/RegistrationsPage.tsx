@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Download,
@@ -35,46 +35,51 @@ function toApiFilters(
     page,
     pageSize: 20,
     campaignId: filters.campaignId || undefined,
-    name: filters.name.trim() || undefined,
+    q: filters.q.trim() || undefined,
     city: filters.city.trim() || undefined,
     neighborhood: filters.neighborhood.trim() || undefined,
     startDate: dateInputToIso(filters.startDate),
     endDate: dateInputToIso(filters.endDate, true),
     hasPhone:
       filters.hasPhone === "" ? undefined : filters.hasPhone === "true",
+    sortBy: filters.sortBy,
+    sortDirection: filters.sortDirection,
   };
 }
 
 export function RegistrationsPage() {
   usePageTitle("Cadastros de ouvintes");
   const { user } = useAuth();
-  const [draftFilters, setDraftFilters] = useState(emptyRegistrationFilters);
-  const [appliedFilters, setAppliedFilters] = useState(emptyRegistrationFilters);
+  const [filters, setFilters] = useState(emptyRegistrationFilters);
+  const [debouncedFilters, setDebouncedFilters] = useState(emptyRegistrationFilters);
   const [page, setPage] = useState(1);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [exporting, setExporting] = useState<"csv" | "xlsx" | null>(null);
 
   const apiFilters = useMemo(
-    () => toApiFilters(appliedFilters, page),
-    [appliedFilters, page],
+    () => toApiFilters(debouncedFilters, page),
+    [debouncedFilters, page],
   );
   const summaryBaseFilters = useMemo(
     () => ({
       page: 1,
       pageSize: 1,
-      campaignId: appliedFilters.campaignId || undefined,
+      campaignId: debouncedFilters.campaignId || undefined,
     }),
-    [appliedFilters.campaignId],
+    [debouncedFilters.campaignId],
   );
 
   const campaignsQuery = useQuery({
     queryKey: ["campaigns"],
-    queryFn: api.listCampaigns,
+    queryFn: () => api.listCampaigns(),
   });
   const registrationsQuery = useQuery({
     queryKey: ["registrations", apiFilters],
     queryFn: () => api.listRegistrations(apiFilters),
     placeholderData: (previous) => previous,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
   const totalQuery = useQuery({
     queryKey: ["registration-total", summaryBaseFilters],
@@ -89,34 +94,47 @@ export function RegistrationsPage() {
       }),
   });
 
-  const activeFilterCount = Object.values(appliedFilters).filter(Boolean).length;
+  const activeFilterCount = [
+    filters.campaignId,
+    filters.q,
+    filters.city,
+    filters.neighborhood,
+    filters.startDate,
+    filters.endDate,
+    filters.hasPhone,
+  ].filter(Boolean).length;
 
-  const applyFilters = () => {
-    if (
-      draftFilters.startDate &&
-      draftFilters.endDate &&
-      draftFilters.startDate > draftFilters.endDate
-    ) {
-      toast.error("A data inicial deve ser anterior à data final.");
-      return;
-    }
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      if (filters.startDate && filters.endDate && filters.startDate > filters.endDate) {
+        return;
+      }
+      setDebouncedFilters(filters);
+    }, 450);
+
+    return () => window.clearTimeout(timeout);
+  }, [filters]);
+
+  const updateFilters = (nextFilters: RegistrationFilterForm) => {
+    setFilters(nextFilters);
     setPage(1);
-    setAppliedFilters(draftFilters);
   };
 
   const clearFilters = () => {
-    setDraftFilters(emptyRegistrationFilters);
-    setAppliedFilters(emptyRegistrationFilters);
+    setFilters(emptyRegistrationFilters);
+    setDebouncedFilters(emptyRegistrationFilters);
     setPage(1);
   };
 
   const handleExport = async (format: "csv" | "xlsx") => {
     setExporting(format);
     try {
-      const apiExportFilters = toApiFilters(appliedFilters);
+      const apiExportFilters = toApiFilters(debouncedFilters);
       const filters = {
         campaignId: apiExportFilters.campaignId,
-        name: apiExportFilters.name,
+        q: apiExportFilters.q,
+        sortBy: apiExportFilters.sortBy,
+        sortDirection: apiExportFilters.sortDirection,
         city: apiExportFilters.city,
         neighborhood: apiExportFilters.neighborhood,
         startDate: apiExportFilters.startDate,
@@ -203,11 +221,10 @@ export function RegistrationsPage() {
         </section>
 
         <RegistrationFiltersPanel
-          value={draftFilters}
+          value={filters}
           campaigns={campaignsQuery.data?.items ?? []}
           activeCount={activeFilterCount}
-          onChange={setDraftFilters}
-          onApply={applyFilters}
+          onChange={updateFilters}
           onClear={clearFilters}
         />
 

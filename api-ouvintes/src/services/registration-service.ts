@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   count,
   desc,
   eq,
@@ -8,6 +9,7 @@ import {
   isNotNull,
   isNull,
   lte,
+  or,
   type SQL,
 } from "drizzle-orm";
 import { db } from "../database/client.js";
@@ -147,12 +149,25 @@ export function buildRegistrationConditions(
     conditions.push(ilike(listenerRegistrations.city, `%${filters.city}%`));
   }
   if (filters.neighborhood) {
-    conditions.push(
-      ilike(listenerRegistrations.neighborhood, `%${filters.neighborhood}%`),
-    );
+    conditions.push(ilike(listenerRegistrations.neighborhood, `%${filters.neighborhood}%`));
   }
   if (filters.name) {
     conditions.push(ilike(listenerRegistrations.name, `%${filters.name}%`));
+  }
+  if (filters.q) {
+    const query = `%${filters.q}%`;
+    const phoneDigits = filters.q.replace(/\D/g, "");
+    const searchCondition = or(
+      ilike(listenerRegistrations.name, query),
+      ilike(listenerRegistrations.city, query),
+      ilike(listenerRegistrations.neighborhood, query),
+      ilike(campaigns.name, query),
+      ...(phoneDigits.length > 0 ? [ilike(listenerRegistrations.phone, `%${phoneDigits}%`)] : []),
+    );
+
+    if (searchCondition) {
+      conditions.push(searchCondition);
+    }
   }
   if (filters.hasPhone === true) {
     conditions.push(isNotNull(listenerRegistrations.phone));
@@ -164,6 +179,18 @@ export function buildRegistrationConditions(
   return conditions;
 }
 
+function getRegistrationOrderBy(filters: Omit<RegistrationFilters, "format">) {
+  const direction = filters.sortDirection === "asc" ? asc : desc;
+
+  if (filters.sortBy === "name") {
+    return direction(listenerRegistrations.name);
+  }
+  if (filters.sortBy === "city") {
+    return direction(listenerRegistrations.city);
+  }
+
+  return direction(listenerRegistrations.createdAt);
+}
 export async function listListenerRegistrations(
   filters: Omit<RegistrationFilters, "format"> & {
     page: number;
@@ -190,12 +217,13 @@ export async function listListenerRegistrations(
       .from(listenerRegistrations)
       .innerJoin(campaigns, eq(campaigns.id, listenerRegistrations.campaignId))
       .where(where)
-      .orderBy(desc(listenerRegistrations.createdAt))
+      .orderBy(getRegistrationOrderBy(filters))
       .limit(pageSize)
       .offset((page - 1) * pageSize),
     db
       .select({ total: count() })
       .from(listenerRegistrations)
+      .innerJoin(campaigns, eq(campaigns.id, listenerRegistrations.campaignId))
       .where(where),
   ]);
 
@@ -247,6 +275,7 @@ export async function getRegistrationsForExport(
   filters: Omit<RegistrationFilters, "format">,
 ) {
   const where = and(...buildRegistrationConditions(filters));
+  const orderBy = getRegistrationOrderBy(filters);
 
   return db
     .select({
@@ -264,7 +293,7 @@ export async function getRegistrationsForExport(
     .from(listenerRegistrations)
     .innerJoin(campaigns, eq(campaigns.id, listenerRegistrations.campaignId))
     .where(where)
-    .orderBy(desc(listenerRegistrations.createdAt))
+    .orderBy(orderBy)
     .limit(env.EXPORT_MAX_ROWS);
 }
 

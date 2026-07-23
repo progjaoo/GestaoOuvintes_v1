@@ -91,6 +91,9 @@ export interface PaginatedResponse<T> {
   pagination: Pagination;
 }
 
+export type RegistrationSortBy = "createdAt" | "name" | "city";
+export type SortDirection = "asc" | "desc";
+
 export interface RegistrationFilters {
   page: number;
   pageSize: number;
@@ -100,7 +103,23 @@ export interface RegistrationFilters {
   city?: string;
   neighborhood?: string;
   name?: string;
+  q?: string;
   hasPhone?: boolean;
+  sortBy?: RegistrationSortBy;
+  sortDirection?: SortDirection;
+}
+
+export type CampaignSortBy = "createdAt" | "startsAt" | "endsAt" | "name";
+
+export interface CampaignFilters {
+  q?: string;
+  status?: CampaignStatus;
+  type?: CampaignType;
+  startDate?: string;
+  endDate?: string;
+  activeToday?: boolean;
+  sortBy?: CampaignSortBy;
+  sortDirection?: SortDirection;
 }
 
 export interface CampaignInput {

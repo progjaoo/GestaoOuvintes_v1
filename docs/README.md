@@ -40,3 +40,5 @@ GestaoOuvintes/
 3. Para trabalhar no backend, siga [Backend API](backend-api.md) e [Banco de dados](database.md).
 4. Para trabalhar no painel, siga [Painel administrativo](frontend-admin.md) e [Mobile First](mobile-first.md).
 5. Antes de publicar, revise [Seguranca e privacidade](security-privacy.md) e [Deploy e operacao](deployment-operations.md).
+
+- [Usuários administrativos e RBAC futuro](usuarios-rbac-futuro.md)

@@ -1,8 +1,9 @@
-import { and, desc, eq, lte, or, gt, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../database/client.js";
 import { campaigns, campaignPlacements } from "../database/schema.js";
 import { AppError } from "../lib/errors.js";
 import { normalizeText } from "../lib/normalization.js";
+import type { CampaignListFilters } from "../schemas/campaign.js";
 import { emitCampaignChanged } from "./campaign-events.js";
 
 export async function getPublicCampaign(slug: string) {
@@ -97,10 +98,69 @@ export async function findActiveCampaignForRegistration(slug: string) {
   return campaign;
 }
 
-export async function listCampaigns() {
-  return db.query.campaigns.findMany({
-    orderBy: (table, { desc }) => [desc(table.createdAt)],
-  });
+function buildCampaignConditions(filters: CampaignListFilters): SQL[] {
+  const conditions: SQL[] = [isNull(campaigns.archivedAt)];
+
+  if (filters.status) {
+    conditions.push(eq(campaigns.status, filters.status));
+  }
+  if (filters.type) {
+    conditions.push(eq(campaigns.type, filters.type));
+  }
+  if (filters.q) {
+    const query = `%${filters.q}%`;
+    const searchCondition = or(
+      ilike(campaigns.name, query),
+      ilike(campaigns.title, query),
+      ilike(campaigns.slug, query),
+    );
+
+    if (searchCondition) {
+      conditions.push(searchCondition);
+    }
+  }
+  if (filters.startDate) {
+    conditions.push(gte(campaigns.startsAt, new Date(filters.startDate)));
+  }
+  if (filters.endDate) {
+    conditions.push(lte(campaigns.startsAt, new Date(filters.endDate)));
+  }
+  if (filters.activeToday === true) {
+    const now = new Date();
+    conditions.push(
+      and(
+        eq(campaigns.status, "active"),
+        lte(campaigns.startsAt, now),
+        or(isNull(campaigns.endsAt), gt(campaigns.endsAt, now)),
+      )!,
+    );
+  }
+
+  return conditions;
+}
+
+function getCampaignOrderBy(filters: CampaignListFilters) {
+  const direction = filters.sortDirection === "asc" ? asc : desc;
+
+  if (filters.sortBy === "startsAt") {
+    return direction(campaigns.startsAt);
+  }
+  if (filters.sortBy === "endsAt") {
+    return direction(campaigns.endsAt);
+  }
+  if (filters.sortBy === "name") {
+    return direction(campaigns.name);
+  }
+
+  return direction(campaigns.createdAt);
+}
+
+export async function listCampaigns(filters: CampaignListFilters) {
+  return db
+    .select()
+    .from(campaigns)
+    .where(and(...buildCampaignConditions(filters)))
+    .orderBy(getCampaignOrderBy(filters));
 }
 
 interface CampaignInput {

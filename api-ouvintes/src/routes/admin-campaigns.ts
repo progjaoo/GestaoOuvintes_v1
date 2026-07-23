@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { requireAdminRole, requireAuthentication } from "../plugins/auth.js";
 import {
   campaignIdParamsSchema,
+  campaignListQuerySchema,
   createCampaignSchema,
   placementParamsSchema,
   publishCampaignSchema,
@@ -18,9 +19,12 @@ import {
 export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", requireAuthentication);
 
-  app.get("/", async () => ({
-    items: await listCampaigns(),
-  }));
+  app.get("/", async (request) => {
+    const filters = campaignListQuerySchema.parse(request.query);
+    return {
+      items: await listCampaigns(filters),
+    };
+  });
 
   app.get("/placements/list", async () => ({
     items: await listPlacements(),

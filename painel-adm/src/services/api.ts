@@ -7,6 +7,7 @@ import type {
   Campaign,
   CampaignInput,
   CampaignPlacement,
+  CampaignFilters,
   LoginResponse,
   PaginatedResponse,
   RegistrationDetail,
@@ -169,8 +170,8 @@ export const api = {
     return request<void>("/api/admin/auth/logout", { method: "POST" });
   },
 
-  listCampaigns() {
-    return request<{ items: Campaign[] }>("/api/admin/campaigns");
+  listCampaigns(filters: CampaignFilters = {}) {
+    return request<{ items: Campaign[] }>(`/api/admin/campaigns${toQueryString(filters)}`);
   },
 
   listCampaignPlacements() {
