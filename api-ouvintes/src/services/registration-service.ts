@@ -10,6 +10,7 @@ import {
   isNull,
   lte,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import { db } from "../database/client.js";
@@ -52,6 +53,31 @@ interface RegistrationRequestContext {
   userAgent?: string;
 }
 
+function phoneAlreadyParticipatingError() {
+  return new AppError(
+    409,
+    "PHONE_ALREADY_PARTICIPATING",
+    "Você já está participando do sorteio.",
+  );
+}
+
+function isCampaignPhoneUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const databaseError = error as {
+    code?: string;
+    constraint?: string;
+    cause?: unknown;
+  };
+
+  return (
+    (databaseError.code === "23505" &&
+      databaseError.constraint ===
+        "listener_registration_campaign_phone_unique") ||
+    isCampaignPhoneUniqueViolation(databaseError.cause)
+  );
+}
+
 export async function createListenerRegistration(
   input: CreateRegistrationInput,
   context: RegistrationRequestContext,
@@ -67,12 +93,14 @@ export async function createListenerRegistration(
   }
 
   const now = new Date();
+  const phone = normalizePhone(input.phone);
   const values = {
     campaignId: campaign.id,
     name: normalizeText(input.name),
     neighborhood: normalizeText(input.neighborhood),
     city: normalizeText(input.city),
-    phone: normalizePhone(input.phone),
+    phone,
+    phoneNormalized: phone,
     source: input.source,
     submissionToken: input.submissionToken,
     privacyNoticeVersion: input.privacyNoticeVersion,
@@ -87,48 +115,80 @@ export async function createListenerRegistration(
     userAgentSummary: summarizeUserAgent(context.userAgent),
   };
 
-  const inserted = await db
-    .insert(listenerRegistrations)
-    .values(values)
-    .onConflictDoNothing({
-      target: [
-        listenerRegistrations.campaignId,
-        listenerRegistrations.submissionToken,
-      ],
-    })
-    .returning({
-      id: listenerRegistrations.id,
-      createdAt: listenerRegistrations.createdAt,
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`listener-registration:token:${campaign.id}:${input.submissionToken}`}))`,
+      );
+
+      const existing = await tx.query.listenerRegistrations.findFirst({
+        columns: {
+          id: true,
+          createdAt: true,
+        },
+        where: and(
+          eq(listenerRegistrations.campaignId, campaign.id),
+          eq(listenerRegistrations.submissionToken, input.submissionToken),
+        ),
+      });
+
+      if (existing) {
+        return {
+          created: false,
+          id: existing.id,
+          createdAt: existing.createdAt.toISOString(),
+        };
+      }
+
+      if (phone) {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${`listener-registration:phone:${campaign.id}:${phone}`}))`,
+        );
+
+        const registrationWithPhone =
+          await tx.query.listenerRegistrations.findFirst({
+            columns: { id: true },
+            where: and(
+              eq(listenerRegistrations.campaignId, campaign.id),
+              eq(listenerRegistrations.phoneNormalized, phone),
+              isNull(listenerRegistrations.deletedAt),
+            ),
+          });
+
+        if (registrationWithPhone) {
+          throw phoneAlreadyParticipatingError();
+        }
+      }
+
+      const [inserted] = await tx
+        .insert(listenerRegistrations)
+        .values(values)
+        .returning({
+          id: listenerRegistrations.id,
+          createdAt: listenerRegistrations.createdAt,
+        });
+
+      if (!inserted) {
+        throw new AppError(
+          500,
+          "REGISTRATION_CREATE_FAILED",
+          "Falha ao criar cadastro.",
+        );
+      }
+
+      return {
+        created: true,
+        id: inserted.id,
+        createdAt: inserted.createdAt.toISOString(),
+      };
     });
+  } catch (error) {
+    if (isCampaignPhoneUniqueViolation(error)) {
+      throw phoneAlreadyParticipatingError();
+    }
 
-  if (inserted[0]) {
-    return {
-      created: true,
-      id: inserted[0].id,
-      createdAt: inserted[0].createdAt.toISOString(),
-    };
+    throw error;
   }
-
-  const existing = await db.query.listenerRegistrations.findFirst({
-    columns: {
-      id: true,
-      createdAt: true,
-    },
-    where: and(
-      eq(listenerRegistrations.campaignId, campaign.id),
-      eq(listenerRegistrations.submissionToken, input.submissionToken),
-    ),
-  });
-
-  if (!existing) {
-    throw new AppError(500, "REGISTRATION_LOOKUP_FAILED", "Falha ao confirmar cadastro.");
-  }
-
-  return {
-    created: false,
-    id: existing.id,
-    createdAt: existing.createdAt.toISOString(),
-  };
 }
 
 export function buildRegistrationConditions(

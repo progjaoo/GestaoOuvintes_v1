@@ -26,6 +26,14 @@ type PublicPlatform =
   | "expo_ios"
   | "expo_android";
 
+const registrationSourceByPlatform: Record<PublicPlatform, string> = {
+  web_mobile: "institutional_mobile",
+  web_desktop: "institutional_web",
+  web_tablet: "institutional_web",
+  expo_ios: "expo_ios",
+  expo_android: "expo_android",
+};
+
 interface RequestContext {
   ip: string;
   userAgent?: string;
@@ -36,7 +44,7 @@ interface RegistrationInput {
   name: string;
   neighborhood: string;
   city: string;
-  phone?: string | null;
+  phone: string;
   privacyNoticeVersion: string;
   marketingOptIn: boolean;
   source: "web" | "expo" | "receptionist" | "import";
@@ -59,6 +67,31 @@ function assertDefined<T>(value: T | undefined, code: string, message: string): 
   }
 
   return value;
+}
+
+function phoneAlreadyParticipatingError() {
+  return new AppError(
+    409,
+    "PHONE_ALREADY_PARTICIPATING",
+    "Você já está participando do sorteio.",
+  );
+}
+
+function isCampaignPhoneUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const databaseError = error as {
+    code?: string;
+    constraint?: string;
+    cause?: unknown;
+  };
+
+  return (
+    (databaseError.code === "23505" &&
+      databaseError.constraint ===
+        "listener_registration_campaign_phone_unique") ||
+    isCampaignPhoneUniqueViolation(databaseError.cause)
+  );
 }
 
 export function requireDeviceToken(value: unknown) {
@@ -255,15 +288,97 @@ export async function registerAndParticipate(
   const device = await resolveDevice(input.deviceToken, input.platform);
   const now = new Date();
   const phone = normalizePhone(input.phone);
+  if (!phone) {
+    throw new AppError(
+      400,
+      "PHONE_REQUIRED",
+      "Informe um telefone com DDD.",
+    );
+  }
   const submissionToken = input.submissionToken ?? randomUUID();
+  const normalizedName = normalizeText(input.name);
+  const normalizedNeighborhood = normalizeText(input.neighborhood);
+  const normalizedCity = normalizeText(input.city);
 
-  const result = await db.transaction(async (tx) => {
+  let result;
+
+  try {
+    result = await db.transaction(async (tx) => {
+    // Locks serialize equal retries and equal phones without blocking other listeners.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`listener-registration:token:${campaign.id}:${submissionToken}`}))`,
+    );
+
+    const existingRegistration =
+      await tx.query.listenerRegistrations.findFirst({
+        where: and(
+          eq(listenerRegistrations.campaignId, campaign.id),
+          eq(listenerRegistrations.submissionToken, submissionToken),
+        ),
+      });
+
+    if (existingRegistration) {
+      return {
+        status: "already_processed" as const,
+        id: existingRegistration.id,
+        createdAt: existingRegistration.createdAt,
+      };
+    }
+
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`listener-registration:phone:${campaign.id}:${phone}`}))`,
+    );
+
+    const registrationWithPhone =
+      await tx.query.listenerRegistrations.findFirst({
+        columns: { id: true },
+        where: and(
+          eq(listenerRegistrations.campaignId, campaign.id),
+          eq(listenerRegistrations.phoneNormalized, phone),
+          isNull(listenerRegistrations.deletedAt),
+        ),
+      });
+
+    if (registrationWithPhone) {
+      throw phoneAlreadyParticipatingError();
+    }
+
+    const [registration] = await tx
+      .insert(listenerRegistrations)
+      .values({
+        campaignId: campaign.id,
+        name: normalizedName,
+        neighborhood: normalizedNeighborhood,
+        city: normalizedCity,
+        phone,
+        phoneNormalized: phone,
+        source: registrationSourceByPlatform[input.platform],
+        submissionToken,
+        privacyNoticeVersion: input.privacyNoticeVersion,
+        privacyAcknowledgedAt: now,
+        marketingOptIn: input.marketingOptIn,
+        marketingOptInAt: input.marketingOptIn ? now : null,
+        utmSource: input.utm?.source ?? null,
+        utmMedium: input.utm?.medium ?? null,
+        utmCampaign: input.utm?.campaign ?? null,
+        utmContent: input.utm?.content ?? null,
+        ipHash: hashIp(context.ip, env.IP_HASH_SECRET),
+        userAgentSummary: summarizeUserAgent(context.userAgent),
+      })
+      .returning();
+
+    const createdRegistration = assertDefined(
+      registration,
+      "REGISTRATION_CREATE_FAILED",
+      "Falha ao criar cadastro.",
+    );
+
     const [profile] = await tx
       .insert(listenerProfiles)
       .values({
-        name: normalizeText(input.name),
-        neighborhood: normalizeText(input.neighborhood),
-        city: normalizeText(input.city),
+        name: normalizedName,
+        neighborhood: normalizedNeighborhood,
+        city: normalizedCity,
         phone,
         phoneNormalized: phone,
         marketingOptIn: input.marketingOptIn,
@@ -308,35 +423,6 @@ export async function registerAndParticipate(
       })
       .returning();
 
-    const [registration] = await tx
-      .insert(listenerRegistrations)
-      .values({
-        campaignId: campaign.id,
-        name: createdProfile.name,
-        neighborhood: createdProfile.neighborhood,
-        city: createdProfile.city,
-        phone,
-        source: input.platform === "web_mobile" ? "institutional_mobile" : "institutional_web",
-        submissionToken,
-        privacyNoticeVersion: input.privacyNoticeVersion,
-        privacyAcknowledgedAt: now,
-        marketingOptIn: input.marketingOptIn,
-        marketingOptInAt: input.marketingOptIn ? now : null,
-        utmSource: input.utm?.source ?? null,
-        utmMedium: input.utm?.medium ?? null,
-        utmCampaign: input.utm?.campaign ?? null,
-        utmContent: input.utm?.content ?? null,
-        ipHash: hashIp(context.ip, env.IP_HASH_SECRET),
-        userAgentSummary: summarizeUserAgent(context.userAgent),
-      })
-      .onConflictDoNothing({
-        target: [
-          listenerRegistrations.campaignId,
-          listenerRegistrations.submissionToken,
-        ],
-      })
-      .returning();
-
     await tx
       .insert(campaignDeviceStates)
       .values({
@@ -357,13 +443,24 @@ export async function registerAndParticipate(
         },
       });
 
-    return { profile: createdProfile, participation, registration };
-  });
+    return {
+      status: "created" as const,
+      id: createdRegistration.id,
+      createdAt: createdRegistration.createdAt,
+    };
+    });
+  } catch (error) {
+    if (isCampaignPhoneUniqueViolation(error)) {
+      throw phoneAlreadyParticipatingError();
+    }
+
+    throw error;
+  }
 
   return {
-    id: result.participation?.id ?? result.registration?.id ?? result.profile.id,
-    status: "created" as const,
-    createdAt: now.toISOString(),
+    id: result.id,
+    status: result.status,
+    createdAt: result.createdAt.toISOString(),
     campaign: buildCampaignPayload(campaign),
   };
 }

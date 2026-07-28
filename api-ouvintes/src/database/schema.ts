@@ -11,6 +11,7 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const campaigns = pgTable(
   "campaign",
@@ -64,6 +65,7 @@ export const listenerRegistrations = pgTable(
     neighborhood: varchar("neighborhood", { length: 120 }).notNull(),
     city: varchar("city", { length: 120 }).notNull(),
     phone: varchar("phone", { length: 20 }),
+    phoneNormalized: varchar("phone_normalized", { length: 20 }),
     source: varchar("source", { length: 50 }).notNull().default("institutional_web"),
     submissionToken: uuid("submission_token").notNull(),
     privacyNoticeVersion: varchar("privacy_notice_version", { length: 30 }).notNull(),
@@ -86,6 +88,9 @@ export const listenerRegistrations = pgTable(
       table.campaignId,
       table.submissionToken,
     ),
+    uniqueIndex("listener_registration_campaign_phone_unique")
+      .on(table.campaignId, table.phoneNormalized)
+      .where(sql`${table.phoneNormalized} is not null and ${table.deletedAt} is null`),
     index("listener_registration_campaign_created_idx").on(
       table.campaignId,
       table.createdAt,

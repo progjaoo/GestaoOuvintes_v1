@@ -8,6 +8,10 @@ import {
   mediaAssets,
 } from "../database/banner-schema.js";
 import { AppError } from "../lib/errors.js";
+import {
+  institutionalBannerActionStateSchema,
+  type InstitutionalBannerActionType,
+} from "../schemas/institutional-banner.js";
 import { processBannerImage } from "./media-storage/media-image-processor.js";
 import type { MediaStorage } from "./media-storage/media-storage.js";
 
@@ -86,6 +90,7 @@ const bannerSelection = {
   altText: institutionalBanners.altText,
   placementKey: institutionalBanners.placementKey,
   mediaAssetId: institutionalBanners.mediaAssetId,
+  actionType: institutionalBanners.actionType,
   destinationUrl: institutionalBanners.destinationUrl,
   openInNewTab: institutionalBanners.openInNewTab,
   displayOrder: institutionalBanners.displayOrder,
@@ -145,6 +150,7 @@ export async function listPublicInstitutionalBanners(placementKey: string) {
       title: row.title,
       altText: row.altText,
       imageUrl: publicUrl(row.objectKey) as string,
+      actionType: row.actionType,
       destinationUrl: row.destinationUrl,
       openInNewTab: row.openInNewTab,
       order: row.displayOrder,
@@ -158,6 +164,7 @@ export async function createInstitutionalBannerFromR2Object(
     altText: string;
     placementKey: string;
     objectKey: string;
+    actionType: InstitutionalBannerActionType;
     destinationUrl: string | null;
     openInNewTab: boolean;
     active: boolean;
@@ -169,6 +176,7 @@ export async function createInstitutionalBannerFromR2Object(
   }
 
   const object = normalizeExistingObjectKey(input.objectKey);
+  const action = institutionalBannerActionStateSchema.parse(input);
 
   return db.transaction(async (tx) => {
     await tx.execute(
@@ -208,8 +216,9 @@ export async function createInstitutionalBannerFromR2Object(
       altText: input.altText,
       placementKey: input.placementKey,
       mediaAssetId: asset.id,
-      destinationUrl: input.destinationUrl,
-      openInNewTab: input.openInNewTab,
+      actionType: action.actionType,
+      destinationUrl: action.destinationUrl,
+      openInNewTab: action.openInNewTab,
       active: input.active,
       displayOrder: (last?.displayOrder ?? 0) + 1,
       createdByAdminUserId: adminUserId,
@@ -291,12 +300,15 @@ export async function createInstitutionalBanner(
     altText: string;
     placementKey: string;
     mediaAssetId: string;
+    actionType: InstitutionalBannerActionType;
     destinationUrl: string | null;
     openInNewTab: boolean;
     active: boolean;
   },
   adminUserId: string,
 ) {
+  const action = institutionalBannerActionStateSchema.parse(input);
+
   return db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext(${"institutional_banner:" + input.placementKey}))`,
@@ -318,6 +330,9 @@ export async function createInstitutionalBanner(
 
     const [created] = await tx.insert(institutionalBanners).values({
       ...input,
+      actionType: action.actionType,
+      destinationUrl: action.destinationUrl,
+      openInNewTab: action.openInNewTab,
       displayOrder: (last?.displayOrder ?? 0) + 1,
       createdByAdminUserId: adminUserId,
       updatedByAdminUserId: adminUserId,
@@ -341,6 +356,7 @@ export async function updateInstitutionalBanner(
     altText: string;
     placementKey: string;
     mediaAssetId: string;
+    actionType: InstitutionalBannerActionType;
     destinationUrl: string | null;
     openInNewTab: boolean;
     active: boolean;
@@ -353,6 +369,18 @@ export async function updateInstitutionalBanner(
       .limit(1);
     if (!existing) throw new AppError(404, "BANNER_NOT_FOUND", "Banner nao encontrado.");
 
+    const action = institutionalBannerActionStateSchema.parse({
+      actionType: input.actionType ?? existing.actionType,
+      destinationUrl:
+        input.destinationUrl !== undefined
+          ? input.destinationUrl
+          : existing.destinationUrl,
+      openInNewTab:
+        input.openInNewTab !== undefined
+          ? input.openInNewTab
+          : existing.openInNewTab,
+    });
+
     if (input.mediaAssetId) {
       const [asset] = await tx.select({ status: mediaAssets.status }).from(mediaAssets)
         .where(eq(mediaAssets.id, input.mediaAssetId)).limit(1);
@@ -362,7 +390,14 @@ export async function updateInstitutionalBanner(
     }
 
     const [updated] = await tx.update(institutionalBanners)
-      .set({ ...input, updatedByAdminUserId: adminUserId, updatedAt: new Date() })
+      .set({
+        ...input,
+        actionType: action.actionType,
+        destinationUrl: action.destinationUrl,
+        openInNewTab: action.openInNewTab,
+        updatedByAdminUserId: adminUserId,
+        updatedAt: new Date(),
+      })
       .where(eq(institutionalBanners.id, id)).returning();
 
     if (input.mediaAssetId && input.mediaAssetId !== existing.mediaAssetId) {

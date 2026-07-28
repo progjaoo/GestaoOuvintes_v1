@@ -39,6 +39,9 @@ describe("CampaignFormDialog", () => {
     );
 
     fillRequiredFields();
+    expect(
+      screen.getByText(/site institucional e aplicativo da Rádio 88 FM/i),
+    ).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Status *"), {
       target: { value: "active" },
     });

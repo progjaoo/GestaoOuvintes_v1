@@ -317,11 +317,253 @@ describeIntegration("API integrada com PostgreSQL", () => {
     });
   });
 
+  it("distribui a mesma campanha para iOS e Android com origem e idempotencia corretas", async () => {
+    const adminHeaders = { authorization: `Bearer ${accessToken}` };
+    const slug = `campanha-expo-${Date.now()}`;
+    const created = await app!.inject({
+      method: "POST",
+      url: "/api/admin/campaigns",
+      headers: adminHeaders,
+      payload: {
+        slug,
+        name: "Campanha compartilhada Expo",
+        title: "Participe pelo aplicativo",
+        description: "Cadastro compartilhado entre site e aplicativo.",
+        status: "active",
+        startsAt: new Date(Date.now() - 60_000).toISOString(),
+        endsAt: new Date(Date.now() + 86_400_000).toISOString(),
+        privacyNoticeVersion: "2026-09-01",
+        privacyNoticeUrl: "/privacidade",
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const campaignId = created.json().id as string;
+
+    const published = await app!.inject({
+      method: "POST",
+      url: `/api/admin/campaigns/${campaignId}/publish`,
+      headers: adminHeaders,
+      payload: { placementKey: "institutional_modal" },
+    });
+    expect(published.statusCode).toBe(200);
+
+    const iosDeviceToken = randomUUID();
+    const androidDeviceToken = randomUUID();
+    const resolveSession = (platform: "expo_ios" | "expo_android", deviceToken: string) =>
+      app!.inject({
+        method: "POST",
+        url: "/api/public/session/resolve",
+        headers: {
+          "x-device-token": deviceToken,
+          "x-platform": platform,
+        },
+        payload: {
+          placement: "institutional_modal",
+          platform,
+        },
+      });
+
+    const [iosSession, androidSession] = await Promise.all([
+      resolveSession("expo_ios", iosDeviceToken),
+      resolveSession("expo_android", androidDeviceToken),
+    ]);
+
+    expect(iosSession.statusCode).toBe(200);
+    expect(androidSession.statusCode).toBe(200);
+    expect(iosSession.json()).toMatchObject({
+      campaign: { id: campaignId, slug },
+      experience: "anonymous_registration_required",
+    });
+    expect(androidSession.json()).toMatchObject({
+      campaign: { id: campaignId, slug },
+      experience: "anonymous_registration_required",
+    });
+
+    const register = (
+      platform: "expo_ios" | "expo_android",
+      deviceToken: string,
+      submissionToken: string,
+      name: string,
+      phone: string,
+    ) =>
+      app!.inject({
+        method: "POST",
+        url: "/api/public/listeners/register-and-participate",
+        headers: {
+          "x-device-token": deviceToken,
+          "x-platform": platform,
+          "idempotency-key": submissionToken,
+        },
+        payload: {
+          campaignId,
+          name,
+          neighborhood: "Aterrado",
+          city: "Resende",
+          phone,
+          submissionToken,
+          privacyNoticeVersion: "2026-09-01",
+          privacyAcknowledged: true,
+          marketingOptIn: false,
+          source: "expo",
+          website: "",
+        },
+      });
+
+    const iosSubmissionToken = randomUUID();
+    const [iosFirst, iosSecond] = await Promise.all([
+      register(
+        "expo_ios",
+        iosDeviceToken,
+        iosSubmissionToken,
+        "Ouvinte iOS",
+        "24999994444",
+      ),
+      register(
+        "expo_ios",
+        iosDeviceToken,
+        iosSubmissionToken,
+        "Ouvinte iOS",
+        "24999994444",
+      ),
+    ]);
+    const androidCreated = await register(
+      "expo_android",
+      androidDeviceToken,
+      randomUUID(),
+      "Ouvinte Android",
+      "24999995555",
+    );
+
+    const iosCreated = [iosFirst, iosSecond].find(
+      (response) => response.statusCode === 201,
+    );
+    const iosRepeated = [iosFirst, iosSecond].find(
+      (response) => response.statusCode === 200,
+    );
+    expect([iosFirst.statusCode, iosSecond.statusCode].sort()).toEqual([200, 201]);
+    expect(iosCreated).toBeDefined();
+    expect(iosRepeated).toBeDefined();
+    if (!iosCreated || !iosRepeated) {
+      throw new Error("Respostas idempotentes do iOS ausentes.");
+    }
+    expect(iosRepeated.json()).toMatchObject({
+      id: iosCreated.json().id,
+      status: "already_processed",
+    });
+    expect(androidCreated.statusCode).toBe(201);
+
+    const iosResolvedAgain = await resolveSession("expo_ios", iosDeviceToken);
+    expect(iosResolvedAgain.json()).toMatchObject({
+      campaign: { id: campaignId },
+      listenerState: "known",
+      experience: "already_participating",
+    });
+
+    const registrations = await db.execute<{ source: string; total: string }>(
+      sql`
+        SELECT source, count(*)::text AS total
+        FROM listener_registration
+        WHERE campaign_id = ${campaignId}
+        GROUP BY source
+        ORDER BY source
+      `,
+    );
+    expect(registrations.rows).toEqual([
+      { source: "expo_android", total: "1" },
+      { source: "expo_ios", total: "1" },
+    ]);
+
+    const profiles = await db.execute<{ total: string }>(
+      sql`
+        SELECT count(*)::text AS total
+        FROM listener_profile
+        WHERE name IN ('Ouvinte iOS', 'Ouvinte Android')
+      `,
+    );
+    expect(profiles.rows[0]?.total).toBe("2");
+  });
+
+  it("impede o mesmo telefone na mesma campanha, mas permite em outra campanha", async () => {
+    const adminHeaders = { authorization: `Bearer ${accessToken}` };
+    const slug = `campanha-telefone-${Date.now()}`;
+    const createdCampaign = await app!.inject({
+      method: "POST",
+      url: "/api/admin/campaigns",
+      headers: adminHeaders,
+      payload: {
+        slug,
+        name: "Campanha de telefone unico",
+        title: "Participe do sorteio",
+        description: "Teste de telefone por campanha.",
+        status: "active",
+        startsAt: new Date(Date.now() - 60_000).toISOString(),
+        endsAt: new Date(Date.now() + 86_400_000).toISOString(),
+        privacyNoticeVersion: "2026-09-02",
+        privacyNoticeUrl: "/privacidade",
+      },
+    });
+    expect(createdCampaign.statusCode).toBe(201);
+    const campaignId = createdCampaign.json().id as string;
+    const phone = "24988887777";
+
+    const register = (deviceToken: string, submissionToken: string) =>
+      app!.inject({
+        method: "POST",
+        url: "/api/public/listeners/register-and-participate",
+        headers: {
+          "x-device-token": deviceToken,
+          "x-platform": "web_desktop",
+          "idempotency-key": submissionToken,
+        },
+        payload: {
+          campaignId,
+          name: "Ouvinte telefone",
+          neighborhood: "Centro",
+          city: "Volta Redonda",
+          phone,
+          submissionToken,
+          privacyNoticeVersion: "2026-09-02",
+          privacyAcknowledged: true,
+          marketingOptIn: false,
+          source: "web",
+          website: "",
+        },
+      });
+
+    const first = await register(randomUUID(), randomUUID());
+    const duplicate = await register(randomUUID(), randomUUID());
+
+    expect(first.statusCode).toBe(201);
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toMatchObject({
+      code: "PHONE_ALREADY_PARTICIPATING",
+      message: "Você já está participando do sorteio.",
+    });
+
+    const otherCampaign = await app!.inject({
+      method: "POST",
+      url: "/api/public/listener-registrations",
+      payload: {
+        campaignSlug: "lancamento-institucional-2026",
+        name: "Ouvinte em outra campanha",
+        neighborhood: "Centro",
+        city: "Volta Redonda",
+        phone,
+        submissionToken: randomUUID(),
+        privacyNoticeVersion: "2026-08-01",
+        privacyAcknowledged: true,
+        marketingOptIn: false,
+        source: "institutional_web",
+      },
+    });
+    expect(otherCampaign.statusCode).toBe(201);
+  });
+
   it("lista, detalha e exporta cadastros com auditoria", async () => {
     const headers = { authorization: `Bearer ${accessToken}` };
     const list = await app!.inject({
       method: "GET",
-      url: "/api/admin/listener-registrations?page=1&pageSize=20&city=Volta",
+      url: "/api/admin/listener-registrations?page=1&pageSize=20&city=Volta&q=Maria",
       headers,
     });
 

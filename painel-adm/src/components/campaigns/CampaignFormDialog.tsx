@@ -216,15 +216,15 @@ export function CampaignFormDialog({
               disabled={form.status !== "active"}
             />
             <span>
-              Publicar no modal do institucional
+              Publicar no site e aplicativo
               <span className="mt-1 block font-normal leading-5 text-genesis-muted">
-                Quando a campanha estiver ativa, esta opcao faz o site institucional exibir o modal para visitantes elegiveis.
+                Quando a campanha estiver ativa, esta opção faz o site institucional e aplicativo da Rádio 88 FM exibirem o cadastro para ouvintes elegíveis.
               </span>
             </span>
           </label>
           {form.status !== "active" && (
             <p className="mt-3 text-xs font-semibold text-genesis-muted">
-              Para publicar no site, altere o status para Ativa.
+              Para publicar no site e aplicativo, altere o status para Ativa.
             </p>
           )}
         </div>

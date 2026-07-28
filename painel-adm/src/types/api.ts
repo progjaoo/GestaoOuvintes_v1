@@ -158,12 +158,18 @@ export interface InstitutionalBannerAsset {
   height: number;
 }
 
+export type InstitutionalBannerActionType =
+  | "none"
+  | "external_url"
+  | "listener_registration_modal";
+
 export interface InstitutionalBanner {
   id: string;
   title: string;
   altText: string;
   placementKey: string;
   mediaAssetId: string;
+  actionType: InstitutionalBannerActionType;
   destinationUrl: string | null;
   openInNewTab: boolean;
   displayOrder: number;
@@ -182,6 +188,7 @@ export interface InstitutionalBannerInput {
   altText: string;
   placementKey: string;
   mediaAssetId: string;
+  actionType: InstitutionalBannerActionType;
   destinationUrl: string | null;
   openInNewTab: boolean;
   active: boolean;

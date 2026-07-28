@@ -132,7 +132,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
         },
       );
 
-      return reply.code(201).send(result);
+      return reply.code(result.status === "created" ? 201 : 200).send(result);
     },
   );
 

@@ -18,9 +18,17 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { LoadingBlock } from "@/components/ui/LoadingBlock";
 import { api, ApiError } from "@/services/api";
-import type { InstitutionalBanner } from "@/types/api";
+import type {
+  InstitutionalBanner,
+  InstitutionalBannerActionType,
+} from "@/types/api";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { validateInstitutionalBannerFile } from "@/features/institutional-banners/banner-file";
+import {
+  buildInstitutionalBannerAction,
+  institutionalBannerActionLabels,
+  resolveInstitutionalBannerActionType,
+} from "@/features/institutional-banners/banner-action";
 
 const bannerErrorMessages: Record<string, string> = {
   INVALID_IMAGE_TYPE: "Selecione uma imagem JPEG, PNG, WebP ou AVIF válida.",
@@ -182,6 +190,14 @@ export function InstitutionalBannersPage() {
                     <Badge tone={banner.active ? "green" : "gray"}>
                       {banner.active ? "Ativo" : "Inativo"}
                     </Badge>
+                    <Badge tone="blue">
+                      {institutionalBannerActionLabels[
+                        resolveInstitutionalBannerActionType(
+                          banner.actionType,
+                          banner.destinationUrl,
+                        )
+                      ]}
+                    </Badge>
                   </div>
                   <h2 className="mt-2 font-display text-lg font-semibold text-genesis-text">
                     {banner.title}
@@ -284,6 +300,13 @@ function BannerDialog({
 }) {
   const [title, setTitle] = useState(banner?.title ?? "");
   const [altText, setAltText] = useState(banner?.altText ?? "");
+  const [actionType, setActionType] =
+    useState<InstitutionalBannerActionType>(
+      resolveInstitutionalBannerActionType(
+        banner?.actionType,
+        banner?.destinationUrl,
+      ),
+    );
   const [destinationUrl, setDestinationUrl] = useState(banner?.destinationUrl ?? "");
   const [openInNewTab, setOpenInNewTab] = useState(banner?.openInNewTab ?? false);
   const [active, setActive] = useState(banner?.active ?? false);
@@ -296,12 +319,16 @@ function BannerDialog({
         mediaAssetId = (await api.uploadInstitutionalBannerAsset(file)).id;
       }
 
+      const action = buildInstitutionalBannerAction(
+        actionType,
+        destinationUrl,
+        openInNewTab,
+      );
       const baseInput = {
         title,
         altText,
         placementKey: "home_hero",
-        destinationUrl: destinationUrl || null,
-        openInNewTab,
+        ...action,
         active,
       };
 
@@ -358,15 +385,40 @@ function BannerDialog({
           </span>
         </label>
         <label className="block text-sm font-semibold text-genesis-text">
-          Link de destino (opcional)
-          <Input
-            className="mt-2"
-            type="url"
-            placeholder="https://..."
-            value={destinationUrl}
-            onChange={(e) => setDestinationUrl(e.target.value)}
-          />
+          Ação ao clicar
+          <select
+            className="mt-2 min-h-10 w-full rounded-md border border-genesis-border bg-genesis-surface px-3 text-base text-genesis-text outline-none transition focus:border-genesis-primary focus:ring-4 focus:ring-genesis-primary/10 sm:text-sm"
+            value={actionType}
+            onChange={(event) => {
+              const nextAction =
+                event.target.value as InstitutionalBannerActionType;
+              setActionType(nextAction);
+              if (nextAction !== "external_url") {
+                setDestinationUrl("");
+                setOpenInNewTab(false);
+              }
+            }}
+          >
+            <option value="none">Sem ação</option>
+            <option value="listener_registration_modal">
+              Abrir modal de cadastro/sorteio
+            </option>
+            <option value="external_url">Abrir link externo</option>
+          </select>
         </label>
+        {actionType === "external_url" && (
+          <label className="block text-sm font-semibold text-genesis-text">
+            Link de destino
+            <Input
+              className="mt-2"
+              type="url"
+              placeholder="https://..."
+              value={destinationUrl}
+              onChange={(e) => setDestinationUrl(e.target.value)}
+              required
+            />
+          </label>
+        )}
         <label className="block text-sm font-semibold text-genesis-text">
           {banner ? "Substituir imagem (opcional)" : "Imagem"}
           <Input
@@ -380,10 +432,16 @@ function BannerDialog({
           </span>
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex items-center gap-3 rounded-lg border border-genesis-border p-3 text-sm font-semibold">
-            <input type="checkbox" checked={openInNewTab} onChange={(e) => setOpenInNewTab(e.target.checked)} />
-            Abrir link em nova aba
-          </label>
+          {actionType === "external_url" && (
+            <label className="flex items-center gap-3 rounded-lg border border-genesis-border p-3 text-sm font-semibold">
+              <input
+                type="checkbox"
+                checked={openInNewTab}
+                onChange={(e) => setOpenInNewTab(e.target.checked)}
+              />
+              Abrir link em nova aba
+            </label>
+          )}
           <label className="flex items-center gap-3 rounded-lg border border-genesis-border p-3 text-sm font-semibold">
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
             Publicar banner

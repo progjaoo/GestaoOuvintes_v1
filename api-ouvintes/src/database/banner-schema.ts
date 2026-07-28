@@ -48,6 +48,7 @@ export const institutionalBanners = pgTable(
     mediaAssetId: uuid("media_asset_id")
       .notNull()
       .references(() => mediaAssets.id, { onDelete: "restrict" }),
+    actionType: varchar("action_type", { length: 40 }).notNull().default("none"),
     destinationUrl: varchar("destination_url", { length: 2048 }),
     openInNewTab: boolean("open_in_new_tab").notNull().default(false),
     displayOrder: integer("display_order").notNull(),
