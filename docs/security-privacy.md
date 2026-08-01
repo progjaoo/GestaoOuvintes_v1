@@ -51,3 +51,13 @@ Esse fluxo existe para evitar ficar sem acesso em um ambiente novo, mas nao subs
 - CSV/XLSX deve neutralizar formulas.
 - Toda exportacao gera registro em `registration_export_audit`.
 - Acesso a exportacao deve ser restrito a `admin`.
+
+## Seguranca da apuracao
+
+- o navegador nunca escolhe o vencedor; a animacao e somente visual;
+- sorteio e ressorteio exigem autenticacao, RBAC e `listener.phone.read`;
+- `Idempotency-Key`, advisory lock e indice unico impedem resultados duplicados;
+- a API usa `node:crypto.randomInt`, persiste hash SHA-256 do universo e registra auditoria sem PII;
+- respostas com dados do vencedor usam `no-store`;
+- resultados anteriores nao sao apagados em ressorteios;
+- nomes e telefones do sorteio nao devem ser enviados a analytics, logs ou telemetria.

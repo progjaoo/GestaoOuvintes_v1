@@ -16,6 +16,8 @@ import type {
   InstitutionalBanner,
   InstitutionalBannerAsset,
   InstitutionalBannerInput,
+  SweepstakeDrawResponse,
+  SweepstakeStatusResponse,
 } from "@/types/api";
 
 const API_URL = (import.meta.env.VITE_CADASTROS_API_URL ?? "http://127.0.0.1:3010")
@@ -200,6 +202,37 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify({ placementKey }),
+      },
+    );
+  },
+
+  getSweepstakeStatus(campaignId: string) {
+    return request<SweepstakeStatusResponse>(
+      `/api/admin/sweepstakes/${campaignId}/status`,
+    );
+  },
+
+  drawSweepstake(campaignId: string, requestToken: string) {
+    return request<SweepstakeDrawResponse>(
+      `/api/admin/sweepstakes/${campaignId}/draw`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": requestToken },
+      },
+    );
+  },
+
+  redrawSweepstake(
+    campaignId: string,
+    previousDrawId: string,
+    requestToken: string,
+  ) {
+    return request<SweepstakeDrawResponse>(
+      `/api/admin/sweepstakes/${campaignId}/redraw`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": requestToken },
+        body: JSON.stringify({ previousDrawId }),
       },
     );
   },

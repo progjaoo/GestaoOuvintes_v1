@@ -10,6 +10,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Trophy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,6 +26,7 @@ import { Input } from "@/components/ui/Input";
 import { LoadingBlock } from "@/components/ui/LoadingBlock";
 import { Select } from "@/components/ui/Select";
 import { CampaignFormDialog } from "@/components/campaigns/CampaignFormDialog";
+import { SweepstakeDrawDialog } from "@/components/campaigns/SweepstakeDrawDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
 
 const statusPresentation: Record<
@@ -77,7 +79,12 @@ export function CampaignsPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [sweepstakeCampaign, setSweepstakeCampaign] = useState<Campaign | null>(null);
   const [filters, setFilters] = useState(emptyCampaignFilters);
+
+  const canDrawSweepstake = user?.permissions
+    ? user.permissions.includes("sweepstake.draw")
+    : user?.role === "admin";
 
   const apiFilters = useMemo(() => toCampaignApiFilters(filters), [filters]);
   const activeFilterCount = [
@@ -336,8 +343,9 @@ export function CampaignsPage() {
                       {campaign.slug}
                     </p>
                   </div>
-                  {user?.role === "admin" && (
+                  {(user?.role === "admin" || (campaign.type === "sweepstake" && canDrawSweepstake)) && (
                     <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                      {user?.role === "admin" && (<>
                       <Button variant="outline" className="w-full" onClick={() => openEdit(campaign)}>
                         <Edit3 className="h-4 w-4" />
                         Editar
@@ -350,6 +358,19 @@ export function CampaignsPage() {
                         <Send className="h-4 w-4" />
                         {isPublishedInInstitutionalModal ? "Publicada" : "Publicar"}
                       </Button>
+                      </>)}
+                      {campaign.type === "sweepstake" && canDrawSweepstake && (
+                        <Button
+                          variant="secondary"
+                          className="w-full sm:col-span-2"
+                          onClick={() => setSweepstakeCampaign(campaign)}
+                          disabled={campaign.status !== "closed"}
+                          title={campaign.status === "closed" ? "Realizar sorteio auditável" : "Encerre a campanha antes de sortear"}
+                        >
+                          <Trophy className="h-4 w-4" />
+                          Sortear
+                        </Button>
+                      )}
                     </div>
                   )}
                 </article>
@@ -373,6 +394,19 @@ export function CampaignsPage() {
           }}
           onSubmit={async (input, options) => {
             await saveMutation.mutateAsync({ input, ...options });
+          }}
+        />
+      )}
+
+      {sweepstakeCampaign && (
+        <SweepstakeDrawDialog
+          open
+          campaign={sweepstakeCampaign}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSweepstakeCampaign(null);
+              void queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+            }
           }}
         />
       )}

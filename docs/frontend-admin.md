@@ -63,3 +63,16 @@ VITE_CADASTROS_API_URL=http://127.0.0.1:3010
 ```
 
 Nao coloque JWT, senha ou segredo em variaveis `VITE_*`.
+
+## Apuracao de sorteios
+
+Campanhas do tipo `sweepstake` exibem a acao **Sortear** para usuarios com a permissao efetiva `sweepstake.draw`. A acao so e habilitada depois que a campanha esta encerrada.
+
+O modal `SweepstakeDrawDialog`:
+
+- consulta a elegibilidade e recupera um resultado existente;
+- solicita o resultado a API com chave de idempotencia;
+- usa nomes limitados apenas para animacao visual;
+- revela nome, cidade, bairro e telefone do vencedor;
+- permite ressorteio confirmado, preservando o resultado anterior;
+- respeita `prefers-reduced-motion` e bloqueia fechamento durante a apuracao.

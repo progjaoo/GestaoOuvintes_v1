@@ -75,3 +75,25 @@ Scripts:
 ```
 
 Backups devem ser copiados para fora da VPS, preferencialmente criptografados.
+
+## Sorteios auditaveis
+
+As migracoes de sorteio foram introduzidas em `0006_sweepstake_draws.sql`.
+
+- `sweepstake_draw`: resultado, sequencia, algoritmo, hash do universo elegivel, executor e encadeamento de ressorteios.
+- `sweepstake_draw_entry`: snapshot imutavel das participacoes consideradas em cada apuracao.
+- somente um resultado pode permanecer com status `selected` por campanha; resultados anteriores ficam `superseded`.
+- permissoes `sweepstake.read`, `sweepstake.draw` e `sweepstake.redraw` sao concedidas ao papel `admin`.
+
+Antes de uma apuracao, confira participacoes legadas:
+
+```bash
+cd api-ouvintes
+npm run participants:backfill
+# Depois de revisar as contagens:
+npm run participants:backfill -- --apply
+# Opcional: limitar a uma campanha
+npm run participants:backfill -- --campaign=<uuid>
+```
+
+O comando e idempotente, nao imprime PII e executa a aplicacao dentro de transacao.

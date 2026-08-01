@@ -1,8 +1,20 @@
 import argon2 from "argon2";
 import { count, eq } from "drizzle-orm";
-import { db } from "../database/client.js";
+import { db, pool } from "../database/client.js";
 import { adminUsers } from "../database/schema.js";
 import { AppError } from "../lib/errors.js";
+
+async function getAdminPermissions(adminUserId: string): Promise<string[]> {
+  const result = await pool.query<{ key: string }>(
+    "SELECT DISTINCT p.key " +
+      "FROM admin_user_role aur " +
+      "JOIN role_permission rp ON rp.role_id = aur.role_id " +
+      "JOIN permission p ON p.id = rp.permission_id " +
+      "WHERE aur.admin_user_id = $1 ORDER BY p.key",
+    [adminUserId],
+  );
+  return result.rows.map((row) => row.key);
+}
 
 export async function canBootstrapAdmin(): Promise<boolean> {
   const [result] = await db.select({ value: count() }).from(adminUsers);
@@ -49,11 +61,18 @@ export async function bootstrapFirstAdmin(input: {
     throw new AppError(500, "ADMIN_BOOTSTRAP_FAILED", "Falha ao criar administrador.");
   }
 
+  await pool.query(
+    "INSERT INTO admin_user_role (admin_user_id, role_id) " +
+      "SELECT $1, id FROM role WHERE key = 'admin' ON CONFLICT DO NOTHING",
+    [user.id],
+  );
+
   return {
     id: user.id,
     name: user.name,
     username: user.username,
     role: user.role as "admin" | "viewer",
+    permissions: await getAdminPermissions(user.id),
   };
 }
 
@@ -80,6 +99,7 @@ export async function authenticateAdmin(username: string, password: string) {
     name: user.name,
     username: user.username,
     role: user.role as "admin" | "viewer",
+    permissions: await getAdminPermissions(user.id),
   };
 }
 
@@ -100,5 +120,5 @@ export async function getActiveAdmin(id: string) {
     throw new AppError(401, "ADMIN_INACTIVE", "Sessao invalida.");
   }
 
-  return user;
+  return { ...user, permissions: await getAdminPermissions(user.id) };
 }

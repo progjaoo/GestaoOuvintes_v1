@@ -18,7 +18,8 @@
     "banner:check": "tsx scripts/check-banner-flow.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "RUN_INTEGRATION_TESTS=true vitest run tests/integration"
+    "test:integration": "RUN_INTEGRATION_TESTS=true vitest run tests/integration",
+    "participants:backfill": "tsx scripts/backfill-campaign-participations.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1091.0",

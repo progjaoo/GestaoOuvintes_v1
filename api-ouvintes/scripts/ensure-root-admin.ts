@@ -40,13 +40,14 @@ async function ensureRootAdmin(): Promise<void> {
     active: true,
   }).onConflictDoNothing();
 
-  const [admin] = await db.execute<{ id: string; username: string }>(sql`
+  const adminResult = await db.execute<{ id: string; username: string }>(sql`
     SELECT id, username
     FROM admin_user
     WHERE lower(username) = lower(${username})
     ORDER BY created_at DESC
     LIMIT 1
   `);
+  const admin = adminResult.rows[0];
 
   if (!admin) {
     throw new Error("Nao foi possivel criar ou atualizar o administrador raiz.");

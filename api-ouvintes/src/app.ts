@@ -10,6 +10,7 @@ import { AppError } from "./lib/errors.js";
 import { adminAuthRoutes } from "./routes/admin-auth.js";
 import { adminCampaignRoutes } from "./routes/admin-campaigns.js";
 import { adminRegistrationRoutes } from "./routes/admin-registrations.js";
+import { adminSweepstakeRoutes } from "./routes/admin-sweepstakes.js";
 import { adminInstitutionalBannerRoutes } from "./routes/admin-institutional-banners.js";
 import { healthRoutes } from "./routes/health.js";
 import { publicRoutes } from "./routes/public.js";
@@ -206,6 +207,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminCampaignRoutes, { prefix: "/api/admin/campaigns" });
   await app.register(adminRegistrationRoutes, {
     prefix: "/api/admin/listener-registrations",
+  });
+  await app.register(adminSweepstakeRoutes, {
+    prefix: "/api/admin/sweepstakes",
   });
   await app.register(adminInstitutionalBannerRoutes, {
     prefix: "/api/admin/institutional-banners",

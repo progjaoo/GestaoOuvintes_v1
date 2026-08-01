@@ -84,3 +84,13 @@ Consulte tambem:
 
 - `api-ouvintes/docs/API.md`
 - `api-ouvintes/docs/OPERATIONS.md`
+
+## Sorteios administrativos
+
+Endpoints autenticados, protegidos por RBAC e com resposta `Cache-Control: no-store`:
+
+- `GET /api/admin/sweepstakes/:campaignId/status`: confere campanha, elegiveis, pendencias legadas e resultado atual.
+- `POST /api/admin/sweepstakes/:campaignId/draw`: cria a primeira apuracao. Exige `Idempotency-Key: <uuid>`.
+- `POST /api/admin/sweepstakes/:campaignId/redraw`: cria nova apuracao preservando a anterior. Exige idempotency key e `previousDrawId`.
+
+O vencedor e escolhido no backend com `node:crypto.randomInt`, dentro de transacao com advisory lock por campanha. Campanhas precisam ser do tipo `sweepstake`, estar encerradas e nao possuir cadastros legados sem participacao.

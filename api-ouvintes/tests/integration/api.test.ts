@@ -28,6 +28,8 @@ describeIntegration("API integrada com PostgreSQL", () => {
     `);
     await db.execute(sql`DELETE FROM registration_export_audit`);
     await db.execute(sql`DELETE FROM campaign_device_state`);
+    await db.execute(sql`DELETE FROM sweepstake_draw_entry`);
+    await db.execute(sql`DELETE FROM sweepstake_draw`);
     await db.execute(sql`DELETE FROM campaign_participation`);
     await db.execute(sql`DELETE FROM listener_device`);
     await db.execute(sql`DELETE FROM listener_profile`);
@@ -172,6 +174,7 @@ describeIntegration("API integrada com PostgreSQL", () => {
 
     expect(me.statusCode).toBe(200);
     expect(me.json().user.username).toBe("admin");
+    expect(me.json().user.permissions).toContain("sweepstake.draw");
     expect(logout.statusCode).toBe(204);
   });
 
@@ -601,4 +604,132 @@ describeIntegration("API integrada com PostgreSQL", () => {
     );
     expect(audit.rows[0]?.total).toBe("2");
   });
+  it("sorteia e ressorteia participantes elegiveis com auditoria e idempotencia", async () => {
+    const headers = { authorization: `Bearer ${accessToken}` };
+    const unauthorized = await app!.inject({
+      method: "GET",
+      url: `/api/admin/sweepstakes/${randomUUID()}/status`,
+    });
+    const viewerToken = app!.jwt.sign({
+      sub: randomUUID(),
+      role: "viewer",
+      name: "Viewer",
+      username: "viewer",
+    });
+    const forbidden = await app!.inject({
+      method: "GET",
+      url: `/api/admin/sweepstakes/${randomUUID()}/status`,
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    expect(unauthorized.statusCode).toBe(401);
+    expect(forbidden.statusCode).toBe(403);
+    const campaign = await app!.inject({
+      method: "POST",
+      url: "/api/admin/campaigns",
+      headers,
+      payload: {
+        slug: `sorteio-api-${Date.now()}`,
+        name: "Sorteio integrado",
+        title: "Sorteio integrado",
+        description: "Campanha encerrada para validar a apuracao.",
+        status: "closed",
+        type: "sweepstake",
+        startsAt: new Date(Date.now() - 86_400_000).toISOString(),
+        endsAt: new Date(Date.now() - 60_000).toISOString(),
+        privacyNoticeVersion: "2026-09-03",
+        privacyNoticeUrl: "/privacidade",
+      },
+    });
+    expect(campaign.statusCode).toBe(201);
+
+    const campaignId = campaign.json().id as string;
+    for (const [index, name] of ["Ana Sorteio", "Bruno Sorteio", "Carla Sorteio"].entries()) {
+      const profile = await pool.query<{ id: string }>(
+        `INSERT INTO listener_profile
+           (name, neighborhood, city, phone, phone_normalized, status)
+         VALUES ($1, $2, $3, $4, $4, 'active')
+         RETURNING id`,
+        [name, `Bairro ${index + 1}`, "Volta Redonda", `2499999000${index}`],
+      );
+      await pool.query(
+        `INSERT INTO campaign_participation
+           (campaign_id, listener_profile_id, source, status)
+         VALUES ($1, $2, 'web', 'eligible')`,
+        [campaignId, profile.rows[0]!.id],
+      );
+    }
+
+    const status = await app!.inject({
+      method: "GET",
+      url: `/api/admin/sweepstakes/${campaignId}/status`,
+      headers,
+    });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({
+      campaignId,
+      campaignStatus: "closed",
+      eligibleCount: 3,
+      legacyUnlinkedCount: 0,
+      canDraw: true,
+      currentDraw: null,
+    });
+
+    const requestToken = randomUUID();
+    const first = await app!.inject({
+      method: "POST",
+      url: `/api/admin/sweepstakes/${campaignId}/draw`,
+      headers: { ...headers, "idempotency-key": requestToken },
+    });
+    const repeated = await app!.inject({
+      method: "POST",
+      url: `/api/admin/sweepstakes/${campaignId}/draw`,
+      headers: { ...headers, "idempotency-key": requestToken },
+    });
+
+    expect(first.statusCode).toBe(201);
+    expect(first.headers["cache-control"]).toBe("no-store");
+    expect(first.json().winner).toMatchObject({
+      name: expect.any(String),
+      city: "Volta Redonda",
+      neighborhood: expect.any(String),
+      phone: expect.any(String),
+    });
+    expect(first.json().animationNames.at(-1)).toBe(first.json().winner.name);
+    expect(repeated.statusCode).toBe(200);
+    expect(repeated.json().drawId).toBe(first.json().drawId);
+
+    const redraw = await app!.inject({
+      method: "POST",
+      url: `/api/admin/sweepstakes/${campaignId}/redraw`,
+      headers: { ...headers, "idempotency-key": randomUUID() },
+      payload: { previousDrawId: first.json().drawId },
+    });
+
+    expect(redraw.statusCode).toBe(201);
+    expect(redraw.json().sequence).toBe(2);
+    expect(redraw.json().winner.participationId).not.toBe(
+      first.json().winner.participationId,
+    );
+
+    const persisted = await pool.query<{ status: string; sequence: number }>(
+      `SELECT status, sequence
+       FROM sweepstake_draw
+       WHERE campaign_id = $1
+       ORDER BY sequence`,
+      [campaignId],
+    );
+    expect(persisted.rows).toEqual([
+      { status: "superseded", sequence: 1 },
+      { status: "selected", sequence: 2 },
+    ]);
+
+    const audit = await pool.query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM admin_audit_log
+       WHERE resource_type = 'sweepstake_draw'
+         AND metadata->>'campaignId' = $1`,
+      [campaignId],
+    );
+    expect(audit.rows[0]?.total).toBe("2");
+  });
+
 });

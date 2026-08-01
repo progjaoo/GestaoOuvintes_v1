@@ -53,6 +53,30 @@ describe("CampaignFormDialog", () => {
     });
   });
 
+  it("permite criar uma campanha do tipo sorteio", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <CampaignFormDialog
+        open
+        campaign={null}
+        publishedInInstitutionalModal={false}
+        submitting={false}
+        onOpenChange={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText("Tipo *"), {
+      target: { value: "sweepstake" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /salvar campanha/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ type: "sweepstake" });
+  });
+
   it("nao publica automaticamente quando a campanha permanece em rascunho", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
 

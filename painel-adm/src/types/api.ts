@@ -9,6 +9,7 @@ export interface AdminUser {
   role: AdminRole;
   active?: boolean;
   lastLoginAt?: string | null;
+  permissions?: string[];
 }
 
 export interface LoginResponse {
@@ -134,6 +135,35 @@ export interface CampaignInput {
   privacyNoticeVersion: string;
   privacyNoticeUrl: string;
   termsUrl?: string | null;
+}
+
+export interface SweepstakeWinner {
+  participationId: string;
+  name: string;
+  city: string;
+  neighborhood: string;
+  phone: string | null;
+}
+
+export interface SweepstakeDrawResponse {
+  drawId: string;
+  campaignId: string;
+  sequence: number;
+  eligibleCount: number;
+  drawnAt: string;
+  animationNames: string[];
+  winner: SweepstakeWinner;
+}
+
+export interface SweepstakeStatusResponse {
+  campaignId: string;
+  campaignName: string;
+  campaignStatus: CampaignStatus;
+  campaignType: CampaignType;
+  eligibleCount: number;
+  legacyUnlinkedCount: number;
+  canDraw: boolean;
+  currentDraw: SweepstakeDrawResponse | null;
 }
 
 export interface ApiErrorPayload {

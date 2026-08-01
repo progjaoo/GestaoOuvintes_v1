@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { LoaderCircle, Save } from "lucide-react";
 import { dateTimeLocalToIso, isoToDateTimeLocal } from "@/lib/formatters";
-import type { Campaign, CampaignInput, CampaignStatus } from "@/types/api";
+import type { Campaign, CampaignInput, CampaignStatus, CampaignType } from "@/types/api";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field } from "@/components/ui/Field";
@@ -14,6 +14,7 @@ interface CampaignFormState {
   title: string;
   description: string;
   status: CampaignStatus;
+  type: CampaignType;
   startsAt: string;
   endsAt: string;
   privacyNoticeVersion: string;
@@ -28,6 +29,7 @@ const emptyForm: CampaignFormState = {
   title: "",
   description: "",
   status: "draft",
+  type: "registration",
   startsAt: "",
   endsAt: "",
   privacyNoticeVersion: "",
@@ -43,6 +45,7 @@ function campaignToForm(campaign: Campaign, publishedInInstitutionalModal: boole
     title: campaign.title,
     description: campaign.description,
     status: campaign.status,
+    type: campaign.type ?? "registration",
     startsAt: isoToDateTimeLocal(campaign.startsAt),
     endsAt: isoToDateTimeLocal(campaign.endsAt),
     privacyNoticeVersion: campaign.privacyNoticeVersion,
@@ -115,6 +118,7 @@ export function CampaignFormDialog({
           title: form.title,
           description: form.description,
           status: form.status,
+          type: form.type,
           startsAt: dateTimeLocalToIso(form.startsAt),
           endsAt: form.endsAt ? dateTimeLocalToIso(form.endsAt) : null,
           privacyNoticeVersion: form.privacyNoticeVersion,
@@ -202,6 +206,17 @@ export function CampaignFormDialog({
             <option value="active">Ativa</option>
             <option value="paused">Pausada</option>
             <option value="closed">Encerrada</option>
+          </Select>
+        </Field>
+        <Field label="Tipo *" htmlFor="campaign-type">
+          <Select
+            id="campaign-type"
+            value={form.type}
+            onChange={(event) => update("type", event.target.value)}
+          >
+            <option value="registration">Cadastro de ouvintes</option>
+            <option value="sweepstake">Sorteio</option>
+            <option value="engagement">Engajamento</option>
           </Select>
         </Field>
         <div className="rounded-xl border border-genesis-border bg-indigo-50 p-4 sm:col-span-2">

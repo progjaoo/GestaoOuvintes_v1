@@ -250,6 +250,72 @@ export const permissions = pgTable("permission", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const sweepstakeDraws = pgTable(
+  "sweepstake_draw",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "restrict" }),
+    sequence: integer("sequence").notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("selected"),
+    winnerParticipationId: uuid("winner_participation_id")
+      .notNull()
+      .references(() => campaignParticipations.id, { onDelete: "restrict" }),
+    rootDrawId: uuid("root_draw_id"),
+    previousDrawId: uuid("previous_draw_id"),
+    executedByAdminUserId: uuid("executed_by_admin_user_id")
+      .notNull()
+      .references(() => adminUsers.id, { onDelete: "restrict" }),
+    algorithm: varchar("algorithm", { length: 80 }).notNull(),
+    eligibleCount: integer("eligible_count").notNull(),
+    entriesHash: varchar("entries_hash", { length: 64 }).notNull(),
+    reasonCode: varchar("reason_code", { length: 80 }),
+    requestToken: uuid("request_token").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("sweepstake_draw_campaign_sequence_unique").on(
+      table.campaignId,
+      table.sequence,
+    ),
+    uniqueIndex("sweepstake_draw_campaign_selected_unique")
+      .on(table.campaignId)
+      .where(sql`${table.status} = 'selected'`),
+    uniqueIndex("sweepstake_draw_request_token_unique").on(table.requestToken),
+    index("sweepstake_draw_campaign_created_idx").on(
+      table.campaignId,
+      table.createdAt,
+    ),
+    index("sweepstake_draw_winner_idx").on(table.winnerParticipationId),
+  ],
+);
+
+export const sweepstakeDrawEntries = pgTable(
+  "sweepstake_draw_entry",
+  {
+    drawId: uuid("draw_id")
+      .notNull()
+      .references(() => sweepstakeDraws.id, { onDelete: "restrict" }),
+    participationId: uuid("participation_id")
+      .notNull()
+      .references(() => campaignParticipations.id, { onDelete: "restrict" }),
+    ordinal: integer("ordinal").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.drawId, table.participationId],
+      name: "sweepstake_draw_entry_pkey",
+    }),
+    uniqueIndex("sweepstake_draw_entry_draw_ordinal_unique").on(
+      table.drawId,
+      table.ordinal,
+    ),
+    index("sweepstake_draw_entry_participation_idx").on(table.participationId),
+  ],
+);
+
 export type Campaign = typeof campaigns.$inferSelect;
 export type AdminUser = typeof adminUsers.$inferSelect;
 export type ListenerRegistration = typeof listenerRegistrations.$inferSelect;
@@ -257,3 +323,5 @@ export type CampaignPlacement = typeof campaignPlacements.$inferSelect;
 export type ListenerProfile = typeof listenerProfiles.$inferSelect;
 export type ListenerDevice = typeof listenerDevices.$inferSelect;
 export type CampaignParticipation = typeof campaignParticipations.$inferSelect;
+export type SweepstakeDraw = typeof sweepstakeDraws.$inferSelect;
+export type SweepstakeDrawEntry = typeof sweepstakeDrawEntries.$inferSelect;
