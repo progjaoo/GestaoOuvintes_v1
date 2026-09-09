@@ -30,7 +30,7 @@ export const adminSweepstakeRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const { campaignId } = sweepstakeCampaignParamsSchema.parse(request.params);
       reply.headers(noStoreHeaders);
-      return getSweepstakeStatus(campaignId);
+      return getSweepstakeStatus(campaignId, request.tenant!.tenantId);
     },
   );
 
@@ -52,6 +52,7 @@ export const adminSweepstakeRoutes: FastifyPluginAsync = async (app) => {
         campaignId,
         adminUserId: request.user.sub,
         requestToken: headers["idempotency-key"],
+        tenantId: request.tenant!.tenantId,
       });
 
       reply.headers(noStoreHeaders);
@@ -79,6 +80,7 @@ export const adminSweepstakeRoutes: FastifyPluginAsync = async (app) => {
         adminUserId: request.user.sub,
         requestToken: headers["idempotency-key"],
         previousDrawId: input.previousDrawId,
+        tenantId: request.tenant!.tenantId,
       });
 
       reply.headers(noStoreHeaders);
@@ -86,4 +88,3 @@ export const adminSweepstakeRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 };
-

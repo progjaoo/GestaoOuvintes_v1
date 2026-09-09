@@ -19,7 +19,7 @@ export const adminRegistrationRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/", async (request) => {
     const filters = registrationListQuerySchema.parse(request.query);
-    const { rows, total } = await listListenerRegistrations(filters);
+    const { rows, total } = await listListenerRegistrations(filters, request.tenant?.tenantId);
     return createPagination(rows, filters.page, filters.pageSize, total);
   });
 
@@ -30,11 +30,12 @@ export const adminRegistrationRoutes: FastifyPluginAsync = async (app) => {
     },
     async (request, reply) => {
       const { format, ...filters } = registrationExportQuerySchema.parse(request.query);
-      const rows = await getRegistrationsForExport(filters);
+      const rows = await getRegistrationsForExport(filters, request.tenant?.tenantId);
       const date = new Date().toISOString().slice(0, 10);
 
       await auditExport({
         adminUserId: request.user.sub,
+        tenantId: request.tenant?.tenantId,
         campaignId: filters.campaignId,
         format,
         filters,
@@ -65,6 +66,6 @@ export const adminRegistrationRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/:id", async (request) => {
     const { id } = registrationIdParamsSchema.parse(request.params);
-    return getListenerRegistration(id);
+    return getListenerRegistration(id, request.tenant?.tenantId);
   });
 };

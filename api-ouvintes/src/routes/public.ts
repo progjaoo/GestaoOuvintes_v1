@@ -19,25 +19,32 @@ import {
   updateCampaignDeviceState,
 } from "../services/public-session-service.js";
 import { addCampaignEventClient } from "../services/campaign-events.js";
+import { resolvePublicTenant } from "../services/tenant-service.js";
 
 export const publicRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook("preHandler", async (request) => {
+    const forwardedHost = request.headers["x-forwarded-host"];
+    const host = typeof forwardedHost === "string" ? forwardedHost : request.headers.host;
+    request.tenant = await resolvePublicTenant(host);
+  });
+
   app.get("/campaigns/:slug", async (request) => {
     const { slug } = campaignSlugParamsSchema.parse(request.params);
-    return getPublicCampaign(slug);
+    return getPublicCampaign(slug, request.tenant!.tenantId);
   });
 
   app.get("/placements/:placementKey/campaign", async (request, reply) => {
     const { placementKey } = placementParamsSchema.parse(request.params);
 
     reply.header("Cache-Control", "no-store, max-age=0");
-    return getPublicPlacementCampaign(placementKey);
+    return getPublicPlacementCampaign(placementKey, request.tenant!.tenantId);
   });
 
   app.post("/session/resolve", async (request, reply) => {
     const input = resolvePublicSessionSchema.parse(request.body);
     const deviceToken = requireDeviceToken(request.headers["x-device-token"]);
     reply.header("Cache-Control", "no-store, max-age=0");
-    return resolvePublicSession({ ...input, deviceToken });
+    return resolvePublicSession({ ...input, deviceToken }, request.tenant!.tenantId);
   });
 
   app.get("/events", async (request, reply) => {
@@ -45,6 +52,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     const placement = placementParamsSchema.shape.placementKey.parse(
       query.placement ?? "institutional_modal",
     );
+    const tenantId = request.tenant!.tenantId;
 
     reply.hijack();
     reply.raw.writeHead(200, {
@@ -62,6 +70,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     send("heartbeat", { placement, now: new Date().toISOString() });
     const removeClient = addCampaignEventClient({
       id: randomUUID(),
+      tenantId,
       placement,
       send,
     });
@@ -91,7 +100,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       const result = await createListenerRegistration(input, {
         ip: request.ip,
         userAgent: request.headers["user-agent"],
-      });
+      }, request.tenant!.tenantId);
 
       return reply.code(result.created ? 201 : 200).send({
         id: result.id,
@@ -130,6 +139,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
           ip: request.ip,
           userAgent: request.headers["user-agent"],
         },
+        request.tenant!.tenantId,
       );
 
       return reply.code(result.status === "created" ? 201 : 200).send(result);
@@ -143,7 +153,10 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       request.headers["x-platform"] ?? "web_desktop",
     );
 
-    const result = await participateKnownListener({ campaignId, deviceToken, platform });
+    const result = await participateKnownListener(
+      { campaignId, deviceToken, platform },
+      request.tenant!.tenantId,
+    );
     return reply.code(result.status === "created" ? 201 : 200).send(result);
   });
 
@@ -161,6 +174,7 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
       platform,
       dismissedUntil: input.dismissedUntil,
       incrementOpenCount: input.incrementOpenCount,
+      tenantId: request.tenant!.tenantId,
     });
   });
 };

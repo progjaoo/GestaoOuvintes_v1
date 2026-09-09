@@ -1,5 +1,5 @@
 import argon2 from "argon2";
-import { count, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { db, pool } from "../database/client.js";
 import { adminUsers } from "../database/schema.js";
 import { AppError } from "../lib/errors.js";
@@ -101,6 +101,22 @@ export async function authenticateAdmin(username: string, password: string) {
     role: user.role as "admin" | "viewer",
     permissions: await getAdminPermissions(user.id),
   };
+}
+
+export async function getActiveAdminByClerkUserId(clerkUserId: string) {
+  const user = await db.query.adminUsers.findFirst({
+    columns: { id: true },
+    where: and(
+      eq(adminUsers.clerkUserId, clerkUserId),
+      eq(adminUsers.active, true),
+    ),
+  });
+
+  if (!user) {
+    throw new AppError(403, "CLERK_ADMIN_NOT_LINKED", "Esta conta Clerk ainda nao foi vinculada a um administrador local.");
+  }
+
+  return getActiveAdmin(user.id);
 }
 
 export async function getActiveAdmin(id: string) {

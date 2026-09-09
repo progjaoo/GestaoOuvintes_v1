@@ -247,6 +247,60 @@ Erros relevantes para os clientes:
 - `409 LISTENER_PROFILE_REQUIRED`;
 - `429 RATE_LIMIT_EXCEEDED`.
 
+### Perfil persistente do ouvinte autenticado
+
+Estas rotas usam `Authorization: Bearer <sessao-clerk>` e aceitam apenas
+sessoes Clerk validas emitidas para uma origem autorizada. A identidade
+autenticada e resolvida no PostgreSQL por tenant; o Clerk nao e usado como
+fonte dos dados de negocio.
+
+#### `GET /api/public/me`
+
+Retorna o proprio perfil, preferencias e historico de consentimentos. Se a
+conta Clerk ainda nao tiver perfil local, a API cria somente a identidade
+local `clerk` e retorna `profile: null`.
+
+#### `PUT /api/public/me/profile`
+
+Cria ou atualiza o perfil local. O primeiro salvamento exige
+`privacyAcknowledged: true`, alem de nome, bairro, cidade e telefone. Nos
+salvamentos seguintes, os campos podem ser enviados parcialmente; dados
+ausentes permanecem inalterados.
+
+Exemplo:
+
+```json
+{
+  "name": "Nome do ouvinte",
+  "neighborhood": "Bairro",
+  "city": "Cidade",
+  "phone": "24999999999",
+  "privacyNoticeVersion": "2026-08-01",
+  "privacyAcknowledged": true,
+  "marketingOptIn": false,
+  "receivePortalNews": true
+}
+```
+
+#### `GET /api/public/me/participations`
+
+Lista apenas as campanhas das quais a identidade autenticada participa. Nao
+retorna ouvintes de terceiros.
+
+#### `POST /api/public/me/link-anonymous-device`
+
+Vincula explicitamente o dispositivo atual ao perfil Clerk autenticado. O
+token opaco deve ser enviado em `X-Device-Token`; ele e comparado por hash e
+nunca e persistido em texto puro.
+
+Erros relevantes:
+
+- `401 LISTENER_AUTH_REQUIRED`: sessao ausente ou invalida;
+- `403 AUTHORIZED_PARTY_REJECTED`: origem da sessao nao autorizada;
+- `409 PRIVACY_CONSENT_REQUIRED`: consentimento necessario para criar perfil;
+- `409 LISTENER_PHONE_IN_USE`: telefone ja pertence a outro perfil;
+- `409 ANONYMOUS_PROFILE_CLAIM_REQUIRED`: dispositivo ja vinculado a outro perfil.
+
 ## Autenticação administrativa
 
 ### `POST /api/admin/auth/login`
@@ -353,3 +407,19 @@ A API gera download e cria registro em `registration_export_audit`.
 - Não carregar todas as páginas para exportar.
 - Não enviar PII ao GA4 ou logs do frontend.
 - Tratar `429` no login sem repetir automaticamente.
+
+## Webhook de ciclo de vida Clerk
+
+### `POST /api/webhooks/clerk`
+
+Rota opcional do backend, registrada somente quando
+`CLERK_WEBHOOK_ENABLED=true`. A requisicao deve ser assinada pelo Clerk e e
+validada com o corpo original usando `CLERK_WEBHOOK_SIGNING_SECRET`.
+
+Eventos aceitos: `user.created`, `user.updated` e `user.deleted`. A rota nao
+usa JWT de usuario, nao confia em metadata de tenant e nao cria perfis locais
+sozinha. A sincronizacao ocorre apenas para identidades PostgreSQL ja
+vinculadas ao `clerk_user_id`.
+
+A deduplicacao usa `instance_key + event_id`; a resposta nao retorna PII. Veja
+`docs/CLERK_WEBHOOKS.md` para configuracao e operacao.

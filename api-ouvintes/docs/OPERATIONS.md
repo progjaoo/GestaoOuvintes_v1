@@ -111,3 +111,14 @@ Migrações de produção são forward-only. Para rollback operacional:
 5. reabrir tráfego.
 
 Não use `DROP TABLE` automático em produção.
+
+## Webhook Clerk
+
+O webhook de ciclo de vida fica desabilitado por padrao. Para habilitar somente
+no backend, configure `CLERK_WEBHOOK_ENABLED`, `CLERK_WEBHOOK_SIGNING_SECRET`,
+`CLERK_WEBHOOK_INSTANCE_KEY` e `CLERK_WEBHOOK_BODY_LIMIT_BYTES` conforme
+`docs/CLERK_WEBHOOKS.md`. O endpoint e `POST /api/webhooks/clerk`.
+
+O segredo e obtido no endpoint criado em Clerk Dashboard e deve ficar somente no
+environment do servico da API. Nunca coloque o segredo no painel, no
+institucional, no Radio88App, no Git ou em logs.

@@ -5,7 +5,11 @@ import {
   campaignDeviceStates,
   campaignParticipations,
   campaigns,
+  listenerActivityLogs,
+  listenerCommunicationPreferences,
+  listenerConsents,
   listenerDevices,
+  listenerIdentities,
   listenerProfiles,
   listenerRegistrations,
 } from "../database/schema.js";
@@ -18,8 +22,9 @@ import {
   summarizeUserAgent,
 } from "../lib/normalization.js";
 import { getPublicPlacementCampaign } from "./campaign-service.js";
+import { DEFAULT_TENANT_ID } from "./tenant-service.js";
 
-type PublicPlatform =
+export type PublicPlatform =
   | "web_mobile"
   | "web_desktop"
   | "web_tablet"
@@ -61,6 +66,10 @@ function hashDeviceToken(token: string) {
   return createHmac("sha256", env.DEVICE_TOKEN_SECRET).update(token).digest("hex");
 }
 
+function hashListenerPhone(phone: string) {
+  return createHmac("sha256", env.PHONE_HASH_SECRET).update(phone).digest("hex");
+}
+
 function assertDefined<T>(value: T | undefined, code: string, message: string): T {
   if (!value) {
     throw new AppError(500, code, message);
@@ -94,6 +103,22 @@ function isCampaignPhoneUniqueViolation(error: unknown): boolean {
   );
 }
 
+function isProfilePhoneUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const databaseError = error as {
+    code?: string;
+    constraint?: string;
+    cause?: unknown;
+  };
+
+  return (
+    (databaseError.code === "23505" &&
+      databaseError.constraint === "listener_profile_tenant_phone_unique") ||
+    isProfilePhoneUniqueViolation(databaseError.cause)
+  );
+}
+
 export function requireDeviceToken(value: unknown) {
   const token = Array.isArray(value) ? value[0] : value;
   if (typeof token !== "string" || token.trim().length < 32 || token.length > 256) {
@@ -107,11 +132,12 @@ export function requireDeviceToken(value: unknown) {
   return token.trim();
 }
 
-async function findActiveCampaignById(campaignId: string) {
+async function findActiveCampaignById(campaignId: string, tenantId = DEFAULT_TENANT_ID) {
   const now = new Date();
   const campaign = await db.query.campaigns.findFirst({
     where: and(
       eq(campaigns.id, campaignId),
+      eq(campaigns.tenantId, tenantId),
       eq(campaigns.status, "active"),
       lte(campaigns.startsAt, now),
       or(isNull(campaigns.endsAt), gt(campaigns.endsAt, now)),
@@ -126,11 +152,11 @@ async function findActiveCampaignById(campaignId: string) {
   return campaign;
 }
 
-async function resolveDevice(token: string, platform: PublicPlatform) {
+export async function resolvePublicDevice(token: string, platform: PublicPlatform, tenantId = DEFAULT_TENANT_ID) {
   const tokenHash = hashDeviceToken(token);
   const now = new Date();
   const existing = await db.query.listenerDevices.findFirst({
-    where: eq(listenerDevices.tokenHash, tokenHash),
+    where: and(eq(listenerDevices.tenantId, tenantId), eq(listenerDevices.tokenHash, tokenHash)),
   });
 
   if (existing) {
@@ -139,7 +165,7 @@ async function resolveDevice(token: string, platform: PublicPlatform) {
       await db
         .update(listenerDevices)
         .set({ lastSeenAt: now, platform })
-        .where(eq(listenerDevices.id, existing.id));
+        .where(and(eq(listenerDevices.id, existing.id), eq(listenerDevices.tenantId, tenantId)));
     }
     return existing;
   }
@@ -147,6 +173,7 @@ async function resolveDevice(token: string, platform: PublicPlatform) {
   const [device] = await db
     .insert(listenerDevices)
     .values({
+      tenantId,
       tokenHash,
       platform,
       firstSeenAt: now,
@@ -173,13 +200,12 @@ function buildCampaignPayload(campaign: Awaited<ReturnType<typeof findActiveCamp
   };
 }
 
-export async function resolvePublicSession(input: {
-  placement: string;
-  platform: PublicPlatform;
-  deviceToken: string;
-}) {
-  const placement = await getPublicPlacementCampaign(input.placement);
-  const device = await resolveDevice(input.deviceToken, input.platform);
+export async function resolvePublicSession(
+  input: { placement: string; platform: PublicPlatform; deviceToken: string },
+  tenantId = DEFAULT_TENANT_ID,
+) {
+  const placement = await getPublicPlacementCampaign(input.placement, tenantId);
+  const device = await resolvePublicDevice(input.deviceToken, input.platform, tenantId);
 
   if (!placement.campaign) {
     return {
@@ -199,6 +225,7 @@ export async function resolvePublicSession(input: {
   const [state] = await db
     .insert(campaignDeviceStates)
     .values({
+      tenantId,
       campaignId,
       listenerDeviceId: device.id,
       firstSeenAt: now,
@@ -206,6 +233,7 @@ export async function resolvePublicSession(input: {
     })
     .onConflictDoUpdate({
       target: [
+        campaignDeviceStates.tenantId,
         campaignDeviceStates.campaignId,
         campaignDeviceStates.listenerDeviceId,
       ],
@@ -224,6 +252,7 @@ export async function resolvePublicSession(input: {
   if (device.listenerProfileId) {
     const existingParticipation = await db.query.campaignParticipations.findFirst({
       where: and(
+        eq(campaignParticipations.tenantId, tenantId),
         eq(campaignParticipations.campaignId, campaignId),
         eq(campaignParticipations.listenerProfileId, device.listenerProfileId),
       ),
@@ -269,13 +298,11 @@ export async function resolvePublicSession(input: {
 }
 
 export async function registerAndParticipate(
-  input: RegistrationInput & {
-    deviceToken: string;
-    platform: PublicPlatform;
-  },
+  input: RegistrationInput & { deviceToken: string; platform: PublicPlatform },
   context: RequestContext,
+  tenantId = DEFAULT_TENANT_ID,
 ) {
-  const campaign = await findActiveCampaignById(input.campaignId);
+  const campaign = await findActiveCampaignById(input.campaignId, tenantId);
 
   if (input.privacyNoticeVersion !== campaign.privacyNoticeVersion) {
     throw new AppError(
@@ -285,7 +312,7 @@ export async function registerAndParticipate(
     );
   }
 
-  const device = await resolveDevice(input.deviceToken, input.platform);
+  const device = await resolvePublicDevice(input.deviceToken, input.platform, tenantId);
   const now = new Date();
   const phone = normalizePhone(input.phone);
   if (!phone) {
@@ -312,6 +339,7 @@ export async function registerAndParticipate(
     const existingRegistration =
       await tx.query.listenerRegistrations.findFirst({
         where: and(
+          eq(listenerRegistrations.tenantId, tenantId),
           eq(listenerRegistrations.campaignId, campaign.id),
           eq(listenerRegistrations.submissionToken, submissionToken),
         ),
@@ -326,13 +354,14 @@ export async function registerAndParticipate(
     }
 
     await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${`listener-registration:phone:${campaign.id}:${phone}`}))`,
+      sql`select pg_advisory_xact_lock(hashtext(${`listener-profile:phone:${tenantId}:${phone}`}))`,
     );
 
     const registrationWithPhone =
       await tx.query.listenerRegistrations.findFirst({
         columns: { id: true },
         where: and(
+          eq(listenerRegistrations.tenantId, tenantId),
           eq(listenerRegistrations.campaignId, campaign.id),
           eq(listenerRegistrations.phoneNormalized, phone),
           isNull(listenerRegistrations.deletedAt),
@@ -343,9 +372,130 @@ export async function registerAndParticipate(
       throw phoneAlreadyParticipatingError();
     }
 
+    const deviceProfile = device.listenerProfileId
+      ? await tx.query.listenerProfiles.findFirst({
+          where: and(
+            eq(listenerProfiles.id, device.listenerProfileId),
+            eq(listenerProfiles.tenantId, tenantId),
+            isNull(listenerProfiles.deletedAt),
+          ),
+        })
+      : undefined;
+    const phoneProfile = await tx.query.listenerProfiles.findFirst({
+      where: and(
+        eq(listenerProfiles.tenantId, tenantId),
+        eq(listenerProfiles.phoneNormalized, phone),
+        isNull(listenerProfiles.deletedAt),
+      ),
+    });
+
+    if (deviceProfile && phoneProfile && deviceProfile.id !== phoneProfile.id) {
+      throw new AppError(
+        409,
+        "LISTENER_PROFILE_CONFLICT",
+        "Nao foi possivel confirmar este cadastro neste dispositivo.",
+      );
+    }
+
+    if (!deviceProfile && phoneProfile) {
+      throw new AppError(
+        409,
+        "LISTENER_PROFILE_EXISTS",
+        "Voce ja tem um cadastro conosco. Use o dispositivo cadastrado ou faca a recuperacao da conta.",
+      );
+    }
+
+    let profile = deviceProfile;
+    let profileWasCreated = false;
+    let identity = profile
+      ? await tx.query.listenerIdentities.findFirst({
+          where: and(
+            eq(listenerIdentities.id, profile.listenerIdentityId),
+            eq(listenerIdentities.tenantId, tenantId),
+          ),
+        })
+      : undefined;
+
+    if (profile && profile.phoneNormalized && profile.phoneNormalized !== phone) {
+      throw new AppError(
+        409,
+        "LISTENER_PROFILE_PHONE_MISMATCH",
+        "O telefone informado nao corresponde ao cadastro deste dispositivo.",
+      );
+    }
+
+    if (!profile) {
+      profileWasCreated = true;
+      const [createdIdentity] = await tx
+        .insert(listenerIdentities)
+        .values({
+          tenantId,
+          provider: "anonymous",
+          providerSubject: `device:${device.tokenHash}`,
+          status: "active",
+        })
+        .returning();
+      identity = assertDefined(
+        createdIdentity,
+        "LISTENER_IDENTITY_CREATE_FAILED",
+        "Falha ao criar identidade do ouvinte.",
+      );
+
+      const [createdProfile] = await tx
+        .insert(listenerProfiles)
+        .values({
+          tenantId,
+          listenerIdentityId: identity.id,
+          name: normalizedName,
+          neighborhood: normalizedNeighborhood,
+          city: normalizedCity,
+          phone,
+          phoneNormalized: phone,
+          phoneHash: hashListenerPhone(phone),
+          marketingOptIn: input.marketingOptIn,
+          completedAt: now,
+        })
+        .returning();
+      profile = assertDefined(
+        createdProfile,
+        "LISTENER_PROFILE_CREATE_FAILED",
+        "Falha ao criar perfil do ouvinte.",
+      );
+    } else {
+      if (!identity) {
+        throw new AppError(
+          500,
+          "LISTENER_IDENTITY_MISSING",
+          "O cadastro do ouvinte esta sem identidade vinculada.",
+        );
+      }
+
+      const [updatedProfile] = await tx
+        .update(listenerProfiles)
+        .set({
+          name: normalizedName,
+          neighborhood: normalizedNeighborhood,
+          city: normalizedCity,
+          phone,
+          phoneNormalized: phone,
+          phoneHash: hashListenerPhone(phone),
+          marketingOptIn: profile.marketingOptIn || input.marketingOptIn,
+          completedAt: now,
+          updatedAt: now,
+        })
+        .where(and(eq(listenerProfiles.id, profile.id), eq(listenerProfiles.tenantId, tenantId)))
+        .returning();
+      profile = assertDefined(
+        updatedProfile,
+        "LISTENER_PROFILE_UPDATE_FAILED",
+        "Falha ao atualizar perfil do ouvinte.",
+      );
+    }
+
     const [registration] = await tx
       .insert(listenerRegistrations)
       .values({
+        tenantId,
         campaignId: campaign.id,
         name: normalizedName,
         neighborhood: normalizedNeighborhood,
@@ -373,32 +523,16 @@ export async function registerAndParticipate(
       "Falha ao criar cadastro.",
     );
 
-    const [profile] = await tx
-      .insert(listenerProfiles)
-      .values({
-        name: normalizedName,
-        neighborhood: normalizedNeighborhood,
-        city: normalizedCity,
-        phone,
-        phoneNormalized: phone,
-        marketingOptIn: input.marketingOptIn,
-      })
-      .returning();
-    const createdProfile = assertDefined(
-      profile,
-      "LISTENER_PROFILE_CREATE_FAILED",
-      "Falha ao criar perfil do ouvinte.",
-    );
-
     const [updatedDevice] = await tx
       .update(listenerDevices)
       .set({
-        listenerProfileId: createdProfile.id,
+        listenerIdentityId: identity.id,
+        listenerProfileId: profile.id,
         linkedAt: now,
         lastSeenAt: now,
         platform: input.platform,
       })
-      .where(eq(listenerDevices.id, device.id))
+      .where(and(eq(listenerDevices.id, device.id), eq(listenerDevices.tenantId, tenantId)))
       .returning();
     const linkedDevice = assertDefined(
       updatedDevice,
@@ -409,23 +543,80 @@ export async function registerAndParticipate(
     const [participation] = await tx
       .insert(campaignParticipations)
       .values({
+        tenantId,
         campaignId: campaign.id,
-        listenerProfileId: createdProfile.id,
+        listenerProfileId: profile.id,
         listenerDeviceId: linkedDevice.id,
         source: input.source,
         status: "eligible",
       })
       .onConflictDoNothing({
         target: [
+          campaignParticipations.tenantId,
           campaignParticipations.campaignId,
           campaignParticipations.listenerProfileId,
         ],
       })
       .returning();
 
+    await tx.insert(listenerConsents).values([
+      {
+        tenantId,
+        listenerProfileId: profile.id,
+        consentType: "privacy_registration",
+        documentVersion: input.privacyNoticeVersion,
+        granted: true,
+        source: input.source,
+      },
+      {
+        tenantId,
+        listenerProfileId: profile.id,
+        consentType: "campaign_participation",
+        documentVersion: input.privacyNoticeVersion,
+        granted: true,
+        source: input.source,
+      },
+      {
+        tenantId,
+        listenerProfileId: profile.id,
+        consentType: "campaign_updates",
+        documentVersion: input.privacyNoticeVersion,
+        granted: input.marketingOptIn,
+        source: input.source,
+        revokedAt: input.marketingOptIn ? null : now,
+      },
+    ]);
+
+    await tx
+      .insert(listenerCommunicationPreferences)
+      .values({
+        tenantId,
+        listenerProfileId: profile.id,
+        receiveCampaignUpdates: input.marketingOptIn,
+      })
+      .onConflictDoUpdate({
+        target: [
+          listenerCommunicationPreferences.tenantId,
+          listenerCommunicationPreferences.listenerProfileId,
+        ],
+        set: {
+          receiveCampaignUpdates: sql`${listenerCommunicationPreferences.receiveCampaignUpdates} OR ${input.marketingOptIn}`,
+          updatedAt: now,
+        },
+      });
+
+    await tx.insert(listenerActivityLogs).values({
+      tenantId,
+      listenerIdentityId: identity.id,
+      listenerProfileId: profile.id,
+      eventType: profileWasCreated ? "profile.created" : "profile.reused",
+      metadata: { campaignId: campaign.id, source: input.source },
+    });
+
     await tx
       .insert(campaignDeviceStates)
       .values({
+        tenantId,
         campaignId: campaign.id,
         listenerDeviceId: linkedDevice.id,
         firstSeenAt: now,
@@ -434,6 +625,7 @@ export async function registerAndParticipate(
       })
       .onConflictDoUpdate({
         target: [
+          campaignDeviceStates.tenantId,
           campaignDeviceStates.campaignId,
           campaignDeviceStates.listenerDeviceId,
         ],
@@ -454,6 +646,14 @@ export async function registerAndParticipate(
       throw phoneAlreadyParticipatingError();
     }
 
+    if (isProfilePhoneUniqueViolation(error)) {
+      throw new AppError(
+        409,
+        "LISTENER_PROFILE_EXISTS",
+        "Voce ja tem um cadastro conosco. Use o dispositivo cadastrado ou faca a recuperacao da conta.",
+      );
+    }
+
     throw error;
   }
 
@@ -465,13 +665,12 @@ export async function registerAndParticipate(
   };
 }
 
-export async function participateKnownListener(input: {
-  campaignId: string;
-  deviceToken: string;
-  platform: PublicPlatform;
-}) {
-  const campaign = await findActiveCampaignById(input.campaignId);
-  const device = await resolveDevice(input.deviceToken, input.platform);
+export async function participateKnownListener(
+  input: { campaignId: string; deviceToken: string; platform: PublicPlatform },
+  tenantId = DEFAULT_TENANT_ID,
+) {
+  const campaign = await findActiveCampaignById(input.campaignId, tenantId);
+  const device = await resolvePublicDevice(input.deviceToken, input.platform, tenantId);
 
   if (!device.listenerProfileId) {
     throw new AppError(
@@ -485,6 +684,7 @@ export async function participateKnownListener(input: {
   const [participation] = await db
     .insert(campaignParticipations)
     .values({
+      tenantId,
       campaignId: campaign.id,
       listenerProfileId: device.listenerProfileId,
       listenerDeviceId: device.id,
@@ -493,8 +693,9 @@ export async function participateKnownListener(input: {
     })
     .onConflictDoNothing({
       target: [
-        campaignParticipations.campaignId,
-        campaignParticipations.listenerProfileId,
+          campaignParticipations.tenantId,
+          campaignParticipations.campaignId,
+          campaignParticipations.listenerProfileId,
       ],
     })
     .returning();
@@ -503,6 +704,7 @@ export async function participateKnownListener(input: {
     participation ??
     (await db.query.campaignParticipations.findFirst({
       where: and(
+        eq(campaignParticipations.tenantId, tenantId),
         eq(campaignParticipations.campaignId, campaign.id),
         eq(campaignParticipations.listenerProfileId, device.listenerProfileId),
       ),
@@ -511,6 +713,7 @@ export async function participateKnownListener(input: {
   await db
     .insert(campaignDeviceStates)
     .values({
+      tenantId,
       campaignId: campaign.id,
       listenerDeviceId: device.id,
       firstSeenAt: now,
@@ -519,6 +722,7 @@ export async function participateKnownListener(input: {
     })
     .onConflictDoUpdate({
       target: [
+        campaignDeviceStates.tenantId,
         campaignDeviceStates.campaignId,
         campaignDeviceStates.listenerDeviceId,
       ],
@@ -538,9 +742,11 @@ export async function updateCampaignDeviceState(input: {
   platform: PublicPlatform;
   dismissedUntil?: string | null;
   incrementOpenCount?: boolean;
+  tenantId?: string;
 }) {
-  await findActiveCampaignById(input.campaignId);
-  const device = await resolveDevice(input.deviceToken, input.platform);
+  const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
+  await findActiveCampaignById(input.campaignId, tenantId);
+  const device = await resolvePublicDevice(input.deviceToken, input.platform, tenantId);
   const now = new Date();
   const dismissedUntil = input.dismissedUntil ? new Date(input.dismissedUntil) : null;
   const conflictSet = input.incrementOpenCount
@@ -557,6 +763,7 @@ export async function updateCampaignDeviceState(input: {
   const [state] = await db
     .insert(campaignDeviceStates)
     .values({
+      tenantId,
       campaignId: input.campaignId,
       listenerDeviceId: device.id,
       firstSeenAt: now,
@@ -566,6 +773,7 @@ export async function updateCampaignDeviceState(input: {
     })
     .onConflictDoUpdate({
       target: [
+        campaignDeviceStates.tenantId,
         campaignDeviceStates.campaignId,
         campaignDeviceStates.listenerDeviceId,
       ],

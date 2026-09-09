@@ -6,6 +6,14 @@ const optionalNonEmptyString = z.preprocess(
   z.string().min(1).optional(),
 );
 
+const optionalPemKey = z.preprocess(
+  (value) => {
+    if (typeof value !== "string" || value.trim() === "") return undefined;
+    return value.replace(/\\n/g, "\n").trim();
+  },
+  z.string().min(1).optional(),
+);
+
 const optionalUrl = z.preprocess(
   (value) => value === "" ? undefined : value,
   z.string().url().optional(),
@@ -14,6 +22,11 @@ const optionalUrl = z.preprocess(
 const booleanFromString = z
   .enum(["true", "false"])
   .default("false")
+  .transform((value) => value === "true");
+
+const booleanDefaultTrueFromString = z
+  .enum(["true", "false"])
+  .default("true")
   .transform((value) => value === "true");
 
 const envSchema = z.object({
@@ -26,9 +39,16 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().default("2h"),
   CORS_ALLOWED_ORIGINS: z.string().default("http://localhost:8080"),
+  DEFAULT_TENANT_SLUG: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug de tenant invalido.").default("radio-88"),
+  PROGRAMMING_TIMEZONE: z.string().min(1).default("America/Sao_Paulo"),
+  TENANCY_ENABLED: booleanFromString,
+  TENANT_MEMBERSHIP_RBAC_ENABLED: booleanFromString,
+  LEGACY_ADMIN_RBAC_FALLBACK: booleanDefaultTrueFromString,
+  TENANT_MEDIA_PATHS_ENABLED: booleanFromString,
   REGISTRATION_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(5),
   LOGIN_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(5),
   IP_HASH_SECRET: z.string().min(16),
+  PHONE_HASH_SECRET: z.preprocess((value) => value === "" ? undefined : value, z.string().min(16).optional()),
   DEVICE_TOKEN_SECRET: z.string().min(32).optional(),
   EXPORT_MAX_ROWS: z.coerce.number().int().min(1).max(200_000).default(50_000),
   ADMIN_INITIAL_NAME: z.string().min(2).default("Administrador Radio 88"),
@@ -51,6 +71,22 @@ const envSchema = z.object({
   R2_PUBLIC_BASE_URL: optionalUrl,
   R2_OBJECT_PREFIX: z.string().default("banners-institucional"),
   INSTITUTIONAL_BANNER_MAX_BYTES: z.coerce.number().int().positive().default(10_485_760),
+  CLERK_JWT_KEY: optionalPemKey,
+  CLERK_JWT_ISSUER: optionalUrl,
+  CLERK_ADMIN_AUTH_ENABLED: booleanFromString,
+  CLERK_AUTHORIZED_PARTIES: z.string().default(""),
+  CLERK_WEBHOOK_ENABLED: booleanFromString,
+  CLERK_WEBHOOK_SIGNING_SECRET: optionalNonEmptyString,
+  CLERK_WEBHOOK_INSTANCE_KEY: z.string().min(1).max(120).default("development"),
+  CLERK_WEBHOOK_BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).max(512 * 1024).default(131_072),
+  LISTENER_ACCOUNT_ENABLED: booleanFromString,
+  LISTENER_RECOVERY_HANDOFF_ENABLED: booleanFromString,
+  LISTENER_CRM_PROFILES_ENABLED: booleanFromString,
+  LISTENER_CLERK_LINK_ENABLED: booleanFromString,
+  LISTENER_APP_IDENTITY_ENABLED: booleanFromString,
+  LISTENER_RECOVERY_HANDOFF_SECRET: z.preprocess((value) => value === "" ? undefined : value, z.string().min(32).optional()),
+  LISTENER_RECOVERY_HANDOFF_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(15),
+  LISTENER_RECOVERY_HANDOFF_MAX_PER_HOUR: z.coerce.number().int().min(1).max(20).default(3),
 });
 
 const result = envSchema.safeParse(process.env);
@@ -72,10 +108,21 @@ if (
   );
 }
 
+if (result.data.CLERK_WEBHOOK_ENABLED && !result.data.CLERK_WEBHOOK_SIGNING_SECRET) {
+  throw new Error(
+    "CLERK_WEBHOOK_ENABLED=true exige CLERK_WEBHOOK_SIGNING_SECRET.",
+  );
+}
+
 export const env = {
   ...result.data,
   DEVICE_TOKEN_SECRET: result.data.DEVICE_TOKEN_SECRET ?? result.data.JWT_SECRET,
+  LISTENER_RECOVERY_HANDOFF_SECRET: result.data.LISTENER_RECOVERY_HANDOFF_SECRET ?? result.data.JWT_SECRET,
+  PHONE_HASH_SECRET: result.data.PHONE_HASH_SECRET ?? result.data.IP_HASH_SECRET,
   corsAllowedOrigins: result.data.CORS_ALLOWED_ORIGINS.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+  clerkAuthorizedParties: result.data.CLERK_AUTHORIZED_PARTIES.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
 };

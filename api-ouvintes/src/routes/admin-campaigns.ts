@@ -22,12 +22,12 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
   app.get("/", async (request) => {
     const filters = campaignListQuerySchema.parse(request.query);
     return {
-      items: await listCampaigns(filters),
+      items: await listCampaigns(filters, request.tenant?.tenantId),
     };
   });
 
-  app.get("/placements/list", async () => ({
-    items: await listPlacements(),
+  app.get("/placements/list", async (request) => ({
+    items: await listPlacements(request.tenant?.tenantId),
   }));
 
   app.post(
@@ -52,7 +52,7 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
     },
     async (request, reply) => {
       const input = createCampaignSchema.parse(request.body);
-      const campaign = await createCampaign(input);
+      const campaign = await createCampaign(input, request.tenant?.tenantId);
       return reply.code(201).send(campaign);
     },
   );
@@ -65,7 +65,7 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
     async (request) => {
       const { id } = campaignIdParamsSchema.parse(request.params);
       const input = updateCampaignSchema.parse(request.body);
-      return updateCampaign(id, input);
+      return updateCampaign(id, input, request.tenant?.tenantId);
     },
   );
 
@@ -81,6 +81,7 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
         campaignId: id,
         placementKey: input.placementKey,
         adminUserId: request.user.sub,
+        tenantId: request.tenant?.tenantId,
       });
     },
   );

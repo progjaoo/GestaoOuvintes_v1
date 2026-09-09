@@ -33,7 +33,7 @@ export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) =>
 
   app.get("/", { preHandler: canRead }, async (request) => {
     const { placement } = publicBannerQuerySchema.parse(request.query);
-    return { items: await listAdminInstitutionalBanners(placement) };
+    return { items: await listAdminInstitutionalBanners(placement, request.tenant?.tenantId) };
   });
 
   app.get("/storage/check", { preHandler: canUpload }, async () => ({
@@ -61,6 +61,7 @@ export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) =>
           filename: part.filename,
           adminUserId: request.user.sub,
           storage: createMediaStorage(),
+          tenantSlug: request.tenant?.tenantSlug,
         });
         return reply.code(201).send(asset);
       } catch (error) {
@@ -91,7 +92,7 @@ export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) =>
 
   app.put("/reorder", { preHandler: canManage }, async (request, reply) => {
     const input = reorderInstitutionalBannersSchema.parse(request.body);
-    await reorderInstitutionalBanners(input.placementKey, input.orderedIds, request.user.sub);
+    await reorderInstitutionalBanners(input.placementKey, input.orderedIds, request.user.sub, request.tenant?.tenantId);
     return reply.code(204).send();
   });
 
@@ -99,12 +100,12 @@ export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) =>
     const input = createInstitutionalBannerFromR2ObjectSchema.parse(request.body);
     return reply
       .code(201)
-      .send(await createInstitutionalBannerFromR2Object(input, request.user.sub));
+      .send(await createInstitutionalBannerFromR2Object(input, request.user.sub, request.tenant?.tenantId));
   });
 
   app.post("/", { preHandler: canManage }, async (request, reply) => {
     const input = createInstitutionalBannerSchema.parse(request.body);
-    return reply.code(201).send(await createInstitutionalBanner(input, request.user.sub));
+    return reply.code(201).send(await createInstitutionalBanner(input, request.user.sub, request.tenant?.tenantId));
   });
 
   app.put("/:id", { preHandler: canManage }, async (request) => {
@@ -113,22 +114,23 @@ export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) =>
       id,
       updateInstitutionalBannerSchema.parse(request.body),
       request.user.sub,
+      request.tenant?.tenantId,
     );
   });
 
   app.post("/:id/activate", { preHandler: canManage }, async (request) => {
     const { id } = bannerIdParamsSchema.parse(request.params);
-    return setInstitutionalBannerActive(id, true, request.user.sub);
+    return setInstitutionalBannerActive(id, true, request.user.sub, request.tenant?.tenantId);
   });
 
   app.post("/:id/deactivate", { preHandler: canManage }, async (request) => {
     const { id } = bannerIdParamsSchema.parse(request.params);
-    return setInstitutionalBannerActive(id, false, request.user.sub);
+    return setInstitutionalBannerActive(id, false, request.user.sub, request.tenant?.tenantId);
   });
 
   app.delete("/:id", { preHandler: canManage }, async (request, reply) => {
     const { id } = bannerIdParamsSchema.parse(request.params);
-    await deleteInstitutionalBanner(id, request.user.sub);
+    await deleteInstitutionalBanner(id, request.user.sub, request.tenant?.tenantId);
     return reply.code(204).send();
   });
 };

@@ -1,5 +1,8 @@
+import { DEFAULT_TENANT_ID } from "./tenant-service.js";
+
 type CampaignEventClient = {
   id: string;
+  tenantId: string;
   placement: string;
   send: (event: string, data: unknown) => void;
 };
@@ -13,9 +16,13 @@ export function addCampaignEventClient(client: CampaignEventClient) {
   };
 }
 
-export function emitCampaignChanged(placement: string, version: number) {
+export function emitCampaignChanged(
+  placement: string,
+  version: number,
+  tenantId = DEFAULT_TENANT_ID,
+) {
   for (const client of clients.values()) {
-    if (client.placement !== placement) continue;
+    if (client.tenantId !== tenantId || client.placement !== placement) continue;
     client.send("campaign.changed", { placement, version });
   }
 }

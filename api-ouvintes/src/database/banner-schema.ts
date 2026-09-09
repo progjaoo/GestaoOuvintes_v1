@@ -10,12 +10,14 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { adminUsers } from "./schema.js";
 
 export const mediaAssets = pgTable(
   "media_asset",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().default(sql`current_default_tenant_id()`),
     storageProvider: varchar("storage_provider", { length: 20 }).notNull().default("r2"),
     objectKey: varchar("object_key", { length: 1024 }).notNull(),
     originalName: varchar("original_name", { length: 255 }).notNull(),
@@ -33,7 +35,7 @@ export const mediaAssets = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("media_asset_object_key_unique").on(table.objectKey),
+    uniqueIndex("media_asset_tenant_object_key_unique").on(table.tenantId, table.objectKey),
     index("media_asset_status_created_idx").on(table.status, table.createdAt),
   ],
 );
@@ -42,6 +44,7 @@ export const institutionalBanners = pgTable(
   "institutional_banner",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().default(sql`current_default_tenant_id()`),
     title: varchar("title", { length: 160 }).notNull(),
     altText: varchar("alt_text", { length: 220 }).notNull(),
     placementKey: varchar("placement_key", { length: 80 }).notNull().default("home_hero"),
@@ -66,7 +69,8 @@ export const institutionalBanners = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("institutional_banner_public_idx").on(
+    index("institutional_banner_tenant_public_idx").on(
+      table.tenantId,
       table.placementKey,
       table.active,
       table.displayOrder,
@@ -81,6 +85,7 @@ export const adminAuditLogs = pgTable(
   "admin_audit_log",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().default(sql`current_default_tenant_id()`),
     adminUserId: uuid("admin_user_id").references(() => adminUsers.id, {
       onDelete: "set null",
     }),
@@ -90,5 +95,5 @@ export const adminAuditLogs = pgTable(
     metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("admin_audit_log_created_idx").on(table.createdAt)],
+  (table) => [index("admin_audit_log_tenant_created_idx").on(table.tenantId, table.createdAt)],
 );

@@ -15,7 +15,13 @@ import {
 } from "drizzle-orm";
 import { db } from "../database/client.js";
 import {
+  campaignParticipations,
   campaigns,
+  listenerActivityLogs,
+  listenerCommunicationPreferences,
+  listenerConsents,
+  listenerIdentities,
+  listenerProfiles,
   listenerRegistrations,
   registrationExportAudits,
 } from "../database/schema.js";
@@ -29,6 +35,8 @@ import {
 } from "../lib/normalization.js";
 import type { RegistrationFilters } from "../schemas/registration.js";
 import { findActiveCampaignForRegistration } from "./campaign-service.js";
+import { hashListenerPhone } from "./listener-profile-service.js";
+import { DEFAULT_TENANT_ID } from "./tenant-service.js";
 
 interface CreateRegistrationInput {
   campaignSlug: string;
@@ -78,11 +86,28 @@ function isCampaignPhoneUniqueViolation(error: unknown): boolean {
   );
 }
 
+function isProfilePhoneUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const databaseError = error as {
+    code?: string;
+    constraint?: string;
+    cause?: unknown;
+  };
+
+  return (
+    (databaseError.code === "23505" &&
+      databaseError.constraint === "listener_profile_tenant_phone_unique") ||
+    isProfilePhoneUniqueViolation(databaseError.cause)
+  );
+}
+
 export async function createListenerRegistration(
   input: CreateRegistrationInput,
   context: RegistrationRequestContext,
+  tenantId = DEFAULT_TENANT_ID,
 ) {
-  const campaign = await findActiveCampaignForRegistration(input.campaignSlug);
+  const campaign = await findActiveCampaignForRegistration(input.campaignSlug, tenantId);
 
   if (input.privacyNoticeVersion !== campaign.privacyNoticeVersion) {
     throw new AppError(
@@ -95,6 +120,7 @@ export async function createListenerRegistration(
   const now = new Date();
   const phone = normalizePhone(input.phone);
   const values = {
+    tenantId,
     campaignId: campaign.id,
     name: normalizeText(input.name),
     neighborhood: normalizeText(input.neighborhood),
@@ -142,13 +168,14 @@ export async function createListenerRegistration(
 
       if (phone) {
         await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtext(${`listener-registration:phone:${campaign.id}:${phone}`}))`,
+          sql`select pg_advisory_xact_lock(hashtext(${`listener-profile:phone:${tenantId}:${phone}`}))`,
         );
 
         const registrationWithPhone =
           await tx.query.listenerRegistrations.findFirst({
             columns: { id: true },
             where: and(
+              eq(listenerRegistrations.tenantId, tenantId),
               eq(listenerRegistrations.campaignId, campaign.id),
               eq(listenerRegistrations.phoneNormalized, phone),
               isNull(listenerRegistrations.deletedAt),
@@ -158,6 +185,100 @@ export async function createListenerRegistration(
         if (registrationWithPhone) {
           throw phoneAlreadyParticipatingError();
         }
+      }
+
+      let profile = phone
+        ? await tx.query.listenerProfiles.findFirst({
+            where: and(
+              eq(listenerProfiles.tenantId, tenantId),
+              eq(listenerProfiles.phoneNormalized, phone),
+              isNull(listenerProfiles.deletedAt),
+            ),
+          })
+        : undefined;
+      let identity = profile
+        ? await tx.query.listenerIdentities.findFirst({
+            where: and(
+              eq(listenerIdentities.id, profile.listenerIdentityId),
+              eq(listenerIdentities.tenantId, tenantId),
+            ),
+          })
+        : undefined;
+      let profileWasCreated = false;
+
+      if (profile) {
+        if (!phone) {
+          throw new AppError(
+            400,
+            "PHONE_REQUIRED",
+            "Informe um telefone com DDD.",
+          );
+        }
+
+        if (!identity) {
+          throw new AppError(
+            500,
+            "LISTENER_IDENTITY_MISSING",
+            "O cadastro do ouvinte esta sem identidade vinculada.",
+          );
+        }
+
+        const existingParticipation = await tx.query.campaignParticipations.findFirst({
+          where: and(
+            eq(campaignParticipations.tenantId, tenantId),
+            eq(campaignParticipations.campaignId, campaign.id),
+            eq(campaignParticipations.listenerProfileId, profile.id),
+          ),
+        });
+        if (existingParticipation) {
+          throw phoneAlreadyParticipatingError();
+        }
+
+        const [updatedProfile] = await tx
+          .update(listenerProfiles)
+          .set({
+            name: values.name,
+            neighborhood: values.neighborhood,
+            city: values.city,
+            phone,
+            phoneNormalized: phone,
+            phoneHash: hashListenerPhone(phone),
+            marketingOptIn: profile.marketingOptIn || input.marketingOptIn,
+            completedAt: now,
+            updatedAt: now,
+          })
+          .where(and(eq(listenerProfiles.id, profile.id), eq(listenerProfiles.tenantId, tenantId)))
+          .returning();
+        profile = updatedProfile;
+      } else if (phone) {
+        profileWasCreated = true;
+        const [createdIdentity] = await tx
+          .insert(listenerIdentities)
+          .values({
+            tenantId,
+            provider: "anonymous",
+            providerSubject: `legacy-registration:${campaign.id}:${input.submissionToken}`,
+            status: "unclaimed",
+          })
+          .returning();
+        identity = createdIdentity;
+
+        const [createdProfile] = await tx
+          .insert(listenerProfiles)
+          .values({
+            tenantId,
+            listenerIdentityId: identity!.id,
+            name: values.name,
+            neighborhood: values.neighborhood,
+            city: values.city,
+            phone,
+            phoneNormalized: phone,
+            phoneHash: hashListenerPhone(phone),
+            marketingOptIn: input.marketingOptIn,
+            completedAt: now,
+          })
+          .returning();
+        profile = createdProfile;
       }
 
       const [inserted] = await tx
@@ -176,6 +297,70 @@ export async function createListenerRegistration(
         );
       }
 
+      if (profile && identity) {
+        await tx.insert(campaignParticipations).values({
+          tenantId,
+          campaignId: campaign.id,
+          listenerProfileId: profile.id,
+          source: input.source === "admin_import" ? "import" : "web",
+          status: "eligible",
+        });
+
+        await tx.insert(listenerConsents).values([
+          {
+            tenantId,
+            listenerProfileId: profile.id,
+            consentType: "privacy_registration",
+            documentVersion: input.privacyNoticeVersion,
+            granted: true,
+            source: input.source,
+          },
+          {
+            tenantId,
+            listenerProfileId: profile.id,
+            consentType: "campaign_participation",
+            documentVersion: input.privacyNoticeVersion,
+            granted: true,
+            source: input.source,
+          },
+          {
+            tenantId,
+            listenerProfileId: profile.id,
+            consentType: "campaign_updates",
+            documentVersion: input.privacyNoticeVersion,
+            granted: input.marketingOptIn,
+            source: input.source,
+            revokedAt: input.marketingOptIn ? null : now,
+          },
+        ]);
+
+        await tx
+          .insert(listenerCommunicationPreferences)
+          .values({
+            tenantId,
+            listenerProfileId: profile.id,
+            receiveCampaignUpdates: input.marketingOptIn,
+          })
+          .onConflictDoUpdate({
+            target: [
+              listenerCommunicationPreferences.tenantId,
+              listenerCommunicationPreferences.listenerProfileId,
+            ],
+            set: {
+              receiveCampaignUpdates: sql`${listenerCommunicationPreferences.receiveCampaignUpdates} OR ${input.marketingOptIn}`,
+              updatedAt: now,
+            },
+          });
+
+        await tx.insert(listenerActivityLogs).values({
+          tenantId,
+          listenerIdentityId: identity.id,
+          listenerProfileId: profile.id,
+          eventType: profileWasCreated ? "profile.created" : "profile.reused",
+          metadata: { campaignId: campaign.id, source: input.source },
+        });
+      }
+
       return {
         created: true,
         id: inserted.id,
@@ -187,14 +372,23 @@ export async function createListenerRegistration(
       throw phoneAlreadyParticipatingError();
     }
 
+    if (isProfilePhoneUniqueViolation(error)) {
+      throw new AppError(
+        409,
+        "LISTENER_PROFILE_EXISTS",
+        "Voce ja tem um cadastro conosco. Use o dispositivo cadastrado ou faca a recuperacao da conta.",
+      );
+    }
+
     throw error;
   }
 }
 
 export function buildRegistrationConditions(
   filters: Omit<RegistrationFilters, "format">,
+  tenantId = DEFAULT_TENANT_ID,
 ): SQL[] {
-  const conditions: SQL[] = [isNull(listenerRegistrations.deletedAt)];
+  const conditions: SQL[] = [eq(listenerRegistrations.tenantId, tenantId), isNull(listenerRegistrations.deletedAt)];
 
   if (filters.campaignId) {
     conditions.push(eq(listenerRegistrations.campaignId, filters.campaignId));
@@ -256,9 +450,10 @@ export async function listListenerRegistrations(
     page: number;
     pageSize: number;
   },
+  tenantId = DEFAULT_TENANT_ID,
 ) {
   const { page, pageSize, ...filterValues } = filters;
-  const where = and(...buildRegistrationConditions(filterValues));
+  const where = and(...buildRegistrationConditions(filterValues, tenantId));
 
   const [rows, totalRows] = await Promise.all([
     db
@@ -275,7 +470,7 @@ export async function listListenerRegistrations(
         createdAt: listenerRegistrations.createdAt,
       })
       .from(listenerRegistrations)
-      .innerJoin(campaigns, eq(campaigns.id, listenerRegistrations.campaignId))
+      .innerJoin(campaigns, and(eq(campaigns.id, listenerRegistrations.campaignId), eq(campaigns.tenantId, tenantId)))
       .where(where)
       .orderBy(getRegistrationOrderBy(filters))
       .limit(pageSize)
@@ -283,7 +478,7 @@ export async function listListenerRegistrations(
     db
       .select({ total: count() })
       .from(listenerRegistrations)
-      .innerJoin(campaigns, eq(campaigns.id, listenerRegistrations.campaignId))
+      .innerJoin(campaigns, and(eq(campaigns.id, listenerRegistrations.campaignId), eq(campaigns.tenantId, tenantId)))
       .where(where),
   ]);
 
@@ -293,7 +488,7 @@ export async function listListenerRegistrations(
   };
 }
 
-export async function getListenerRegistration(id: string) {
+export async function getListenerRegistration(id: string, tenantId = DEFAULT_TENANT_ID) {
   const [registration] = await db
     .select({
       id: listenerRegistrations.id,
@@ -315,10 +510,11 @@ export async function getListenerRegistration(id: string) {
       createdAt: listenerRegistrations.createdAt,
     })
     .from(listenerRegistrations)
-    .innerJoin(campaigns, eq(campaigns.id, listenerRegistrations.campaignId))
+    .innerJoin(campaigns, and(eq(campaigns.id, listenerRegistrations.campaignId), eq(campaigns.tenantId, tenantId)))
     .where(
       and(
         eq(listenerRegistrations.id, id),
+        eq(listenerRegistrations.tenantId, tenantId),
         isNull(listenerRegistrations.deletedAt),
       ),
     )
@@ -333,8 +529,9 @@ export async function getListenerRegistration(id: string) {
 
 export async function getRegistrationsForExport(
   filters: Omit<RegistrationFilters, "format">,
+  tenantId = DEFAULT_TENANT_ID,
 ) {
-  const where = and(...buildRegistrationConditions(filters));
+  const where = and(...buildRegistrationConditions(filters, tenantId));
   const orderBy = getRegistrationOrderBy(filters);
 
   return db
@@ -351,7 +548,7 @@ export async function getRegistrationsForExport(
       createdAt: listenerRegistrations.createdAt,
     })
     .from(listenerRegistrations)
-    .innerJoin(campaigns, eq(campaigns.id, listenerRegistrations.campaignId))
+    .innerJoin(campaigns, and(eq(campaigns.id, listenerRegistrations.campaignId), eq(campaigns.tenantId, tenantId)))
     .where(where)
     .orderBy(orderBy)
     .limit(env.EXPORT_MAX_ROWS);
@@ -359,12 +556,14 @@ export async function getRegistrationsForExport(
 
 export async function auditExport(input: {
   adminUserId: string;
+  tenantId?: string;
   campaignId?: string;
   format: "csv" | "xlsx";
   filters: Record<string, unknown>;
   rowCount: number;
 }) {
   await db.insert(registrationExportAudits).values({
+    tenantId: input.tenantId ?? DEFAULT_TENANT_ID,
     adminUserId: input.adminUserId,
     campaignId: input.campaignId,
     format: input.format,

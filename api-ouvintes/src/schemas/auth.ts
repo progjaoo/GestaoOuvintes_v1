@@ -13,3 +13,7 @@ export const bootstrapAdminSchema = z.object({
     .min(12, "A senha precisa ter pelo menos 12 caracteres.")
     .max(200),
 });
+
+export const selectTenantSchema = z.object({
+  tenantId: z.string().uuid(),
+});

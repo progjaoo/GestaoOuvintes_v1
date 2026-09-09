@@ -14,6 +14,12 @@ import {
 } from "../schemas/institutional-banner.js";
 import { processBannerImage } from "./media-storage/media-image-processor.js";
 import type { MediaStorage } from "./media-storage/media-storage.js";
+import {
+  createMediaObjectKey,
+  isManagedMediaObjectKey,
+  normalizedObjectPrefix,
+} from "./media-storage/media-object-key.js";
+import { DEFAULT_TENANT_ID } from "./tenant-service.js";
 
 const PUBLIC_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
 const OBJECT_CACHE_CONTROL = "public, max-age=31536000, immutable";
@@ -28,31 +34,22 @@ const EXISTING_OBJECT_MIME_TYPES: Record<string, string> = {
 
 function publicUrl(key: string): string | null {
   if (!env.R2_PUBLIC_BASE_URL) return null;
-  return env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "") + "/" +
-    key.split("/").map(encodeURIComponent).join("/");
-}
-
-function normalizedObjectPrefix() {
-  return env.R2_OBJECT_PREFIX.replace(/^\/+|\/+$/g, "");
-}
-
-function createObjectKey(extension: string) {
-  const now = new Date();
-  const prefix = normalizedObjectPrefix();
-  return [
-    prefix,
-    String(now.getUTCFullYear()),
-    String(now.getUTCMonth() + 1).padStart(2, "0"),
-    randomUUID() + "." + extension,
-  ].join("/");
+  return `${env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "")}/${key
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}`;
 }
 
 function normalizeExistingObjectKey(key: string) {
   const normalized = key.trim().replace(/^\/+/, "");
-  const prefix = normalizedObjectPrefix();
-  if (prefix && normalized !== prefix && !normalized.startsWith(prefix + "/")) {
-    throw new AppError(422, "OBJECT_KEY_OUTSIDE_PREFIX", "Use um arquivo dentro de " + prefix + "/.");
+  if (!isManagedMediaObjectKey(normalized)) {
+    throw new AppError(
+      422,
+      "OBJECT_KEY_OUTSIDE_PREFIX",
+      `Use um arquivo dentro de ${normalizedObjectPrefix()}/.`,
+    );
   }
+
   const extension = normalized.split(".").pop()?.toLowerCase() ?? "";
   const mimeType = EXISTING_OBJECT_MIME_TYPES[extension];
   if (!mimeType) {
@@ -68,6 +65,7 @@ function originalNameFromKey(key: string) {
 async function audit(
   executor: Pick<typeof db, "insert">,
   input: {
+    tenantId?: string;
     adminUserId: string;
     action: string;
     resourceType: string;
@@ -76,6 +74,7 @@ async function audit(
   },
 ) {
   await executor.insert(adminAuditLogs).values({
+    tenantId: input.tenantId ?? DEFAULT_TENANT_ID,
     adminUserId: input.adminUserId,
     action: input.action,
     resourceType: input.resourceType,
@@ -86,6 +85,7 @@ async function audit(
 
 const bannerSelection = {
   id: institutionalBanners.id,
+  tenantId: institutionalBanners.tenantId,
   title: institutionalBanners.title,
   altText: institutionalBanners.altText,
   placementKey: institutionalBanners.placementKey,
@@ -109,12 +109,22 @@ function serializeBanner<T extends { objectKey: string }>(banner: T) {
   return { ...banner, imageUrl: publicUrl(banner.objectKey) };
 }
 
-export async function listAdminInstitutionalBanners(placementKey = "home_hero") {
+export async function listAdminInstitutionalBanners(
+  placementKey = "home_hero",
+  tenantId = DEFAULT_TENANT_ID,
+) {
   const rows = await db
     .select(bannerSelection)
     .from(institutionalBanners)
-    .innerJoin(mediaAssets, eq(mediaAssets.id, institutionalBanners.mediaAssetId))
+    .innerJoin(
+      mediaAssets,
+      and(
+        eq(mediaAssets.id, institutionalBanners.mediaAssetId),
+        eq(mediaAssets.tenantId, tenantId),
+      ),
+    )
     .where(and(
+      eq(institutionalBanners.tenantId, tenantId),
       eq(institutionalBanners.placementKey, placementKey),
       isNull(institutionalBanners.deletedAt),
     ))
@@ -122,15 +132,25 @@ export async function listAdminInstitutionalBanners(placementKey = "home_hero") 
   return rows.map(serializeBanner);
 }
 
-export async function listPublicInstitutionalBanners(placementKey: string) {
+export async function listPublicInstitutionalBanners(
+  placementKey: string,
+  tenantId = DEFAULT_TENANT_ID,
+) {
   if (!env.R2_PUBLIC_BASE_URL) {
     return { version: 0, items: [], cacheControl: PUBLIC_CACHE_CONTROL };
   }
   const rows = await db
     .select(bannerSelection)
     .from(institutionalBanners)
-    .innerJoin(mediaAssets, eq(mediaAssets.id, institutionalBanners.mediaAssetId))
+    .innerJoin(
+      mediaAssets,
+      and(
+        eq(mediaAssets.id, institutionalBanners.mediaAssetId),
+        eq(mediaAssets.tenantId, tenantId),
+      ),
+    )
     .where(and(
+      eq(institutionalBanners.tenantId, tenantId),
       eq(institutionalBanners.placementKey, placementKey),
       eq(institutionalBanners.active, true),
       isNull(institutionalBanners.deletedAt),
@@ -170,6 +190,7 @@ export async function createInstitutionalBannerFromR2Object(
     active: boolean;
   },
   adminUserId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ) {
   if (!env.R2_PUBLIC_BASE_URL) {
     throw new AppError(503, "MEDIA_PUBLIC_URL_NOT_CONFIGURED", "A URL publica do armazenamento nao foi configurada.");
@@ -180,13 +201,14 @@ export async function createInstitutionalBannerFromR2Object(
 
   return db.transaction(async (tx) => {
     await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${"institutional_banner:" + input.placementKey}))`,
+      sql`select pg_advisory_xact_lock(hashtext(${"institutional_banner:" + tenantId + ":" + input.placementKey}))`,
     );
 
     const [existingAsset] = await tx.select().from(mediaAssets)
-      .where(eq(mediaAssets.objectKey, object.key)).limit(1);
+      .where(and(eq(mediaAssets.tenantId, tenantId), eq(mediaAssets.objectKey, object.key))).limit(1);
 
     const asset = existingAsset ?? (await tx.insert(mediaAssets).values({
+      tenantId,
       storageProvider: "r2",
       objectKey: object.key,
       originalName: originalNameFromKey(object.key),
@@ -206,12 +228,14 @@ export async function createInstitutionalBannerFromR2Object(
     const [last] = await tx.select({ displayOrder: institutionalBanners.displayOrder })
       .from(institutionalBanners)
       .where(and(
+        eq(institutionalBanners.tenantId, tenantId),
         eq(institutionalBanners.placementKey, input.placementKey),
         isNull(institutionalBanners.deletedAt),
       ))
       .orderBy(desc(institutionalBanners.displayOrder)).limit(1);
 
     const [created] = await tx.insert(institutionalBanners).values({
+      tenantId,
       title: input.title,
       altText: input.altText,
       placementKey: input.placementKey,
@@ -228,6 +252,7 @@ export async function createInstitutionalBannerFromR2Object(
     if (!created) throw new AppError(500, "BANNER_CREATE_FAILED", "Falha ao criar o banner.");
 
     await audit(tx, {
+      tenantId,
       adminUserId,
       action: "create_from_r2_object",
       resourceType: "institutional_banner",
@@ -246,18 +271,22 @@ export async function createInstitutionalBannerFromR2Object(
     });
   });
 }
+
 export async function uploadInstitutionalBannerAsset(input: {
   buffer: Buffer;
   filename: string;
   adminUserId: string;
   storage: MediaStorage;
+  tenantId?: string;
+  tenantSlug?: string;
 }) {
+  const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
   if (input.buffer.length > env.INSTITUTIONAL_BANNER_MAX_BYTES) {
     throw new AppError(413, "IMAGE_TOO_LARGE", "A imagem deve ter no maximo 10 MiB.");
   }
 
   const processed = await processBannerImage(input.buffer, input.filename);
-  const key = createObjectKey(processed.extension);
+  const key = createMediaObjectKey(processed.extension, input.tenantSlug);
   const uploaded = await input.storage.put({
     key,
     body: processed.buffer,
@@ -267,6 +296,7 @@ export async function uploadInstitutionalBannerAsset(input: {
 
   try {
     const [asset] = await db.insert(mediaAssets).values({
+      tenantId,
       storageProvider: "r2",
       objectKey: key,
       originalName: processed.originalName,
@@ -281,6 +311,7 @@ export async function uploadInstitutionalBannerAsset(input: {
     if (!asset) throw new AppError(500, "ASSET_PERSIST_FAILED", "Falha ao registrar a imagem.");
 
     await audit(db, {
+      tenantId,
       adminUserId: input.adminUserId,
       action: "asset.upload",
       resourceType: "media_asset",
@@ -306,16 +337,19 @@ export async function createInstitutionalBanner(
     active: boolean;
   },
   adminUserId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ) {
   const action = institutionalBannerActionStateSchema.parse(input);
 
   return db.transaction(async (tx) => {
     await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${"institutional_banner:" + input.placementKey}))`,
+      sql`select pg_advisory_xact_lock(hashtext(${"institutional_banner:" + tenantId + ":" + input.placementKey}))`,
     );
 
     const [asset] = await tx.select({ id: mediaAssets.id, status: mediaAssets.status })
-      .from(mediaAssets).where(eq(mediaAssets.id, input.mediaAssetId)).limit(1);
+      .from(mediaAssets)
+      .where(and(eq(mediaAssets.id, input.mediaAssetId), eq(mediaAssets.tenantId, tenantId)))
+      .limit(1);
     if (!asset || asset.status !== "ready") {
       throw new AppError(422, "MEDIA_NOT_READY", "Selecione uma imagem pronta para uso.");
     }
@@ -323,12 +357,14 @@ export async function createInstitutionalBanner(
     const [last] = await tx.select({ displayOrder: institutionalBanners.displayOrder })
       .from(institutionalBanners)
       .where(and(
+        eq(institutionalBanners.tenantId, tenantId),
         eq(institutionalBanners.placementKey, input.placementKey),
         isNull(institutionalBanners.deletedAt),
       ))
       .orderBy(desc(institutionalBanners.displayOrder)).limit(1);
 
     const [created] = await tx.insert(institutionalBanners).values({
+      tenantId,
       ...input,
       actionType: action.actionType,
       destinationUrl: action.destinationUrl,
@@ -340,6 +376,7 @@ export async function createInstitutionalBanner(
     if (!created) throw new AppError(500, "BANNER_CREATE_FAILED", "Falha ao criar o banner.");
 
     await audit(tx, {
+      tenantId,
       adminUserId,
       action: "create",
       resourceType: "institutional_banner",
@@ -362,28 +399,27 @@ export async function updateInstitutionalBanner(
     active: boolean;
   }>,
   adminUserId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ) {
   return db.transaction(async (tx) => {
     const [existing] = await tx.select().from(institutionalBanners)
-      .where(and(eq(institutionalBanners.id, id), isNull(institutionalBanners.deletedAt)))
+      .where(and(
+        eq(institutionalBanners.id, id),
+        eq(institutionalBanners.tenantId, tenantId),
+        isNull(institutionalBanners.deletedAt),
+      ))
       .limit(1);
     if (!existing) throw new AppError(404, "BANNER_NOT_FOUND", "Banner nao encontrado.");
 
     const action = institutionalBannerActionStateSchema.parse({
       actionType: input.actionType ?? existing.actionType,
-      destinationUrl:
-        input.destinationUrl !== undefined
-          ? input.destinationUrl
-          : existing.destinationUrl,
-      openInNewTab:
-        input.openInNewTab !== undefined
-          ? input.openInNewTab
-          : existing.openInNewTab,
+      destinationUrl: input.destinationUrl !== undefined ? input.destinationUrl : existing.destinationUrl,
+      openInNewTab: input.openInNewTab !== undefined ? input.openInNewTab : existing.openInNewTab,
     });
 
     if (input.mediaAssetId) {
       const [asset] = await tx.select({ status: mediaAssets.status }).from(mediaAssets)
-        .where(eq(mediaAssets.id, input.mediaAssetId)).limit(1);
+        .where(and(eq(mediaAssets.id, input.mediaAssetId), eq(mediaAssets.tenantId, tenantId))).limit(1);
       if (!asset || asset.status !== "ready") {
         throw new AppError(422, "MEDIA_NOT_READY", "Selecione uma imagem pronta para uso.");
       }
@@ -398,19 +434,14 @@ export async function updateInstitutionalBanner(
         updatedByAdminUserId: adminUserId,
         updatedAt: new Date(),
       })
-      .where(eq(institutionalBanners.id, id)).returning();
+      .where(and(eq(institutionalBanners.id, id), eq(institutionalBanners.tenantId, tenantId))).returning();
 
     if (input.mediaAssetId && input.mediaAssetId !== existing.mediaAssetId) {
       await tx.update(mediaAssets).set({ status: "orphaned", updatedAt: new Date() })
-        .where(eq(mediaAssets.id, existing.mediaAssetId));
+        .where(and(eq(mediaAssets.id, existing.mediaAssetId), eq(mediaAssets.tenantId, tenantId)));
     }
 
-    await audit(tx, {
-      adminUserId,
-      action: "update",
-      resourceType: "institutional_banner",
-      resourceId: id,
-    });
+    await audit(tx, { tenantId, adminUserId, action: "update", resourceType: "institutional_banner", resourceId: id });
     return updated;
   });
 }
@@ -419,18 +450,14 @@ export async function setInstitutionalBannerActive(
   id: string,
   active: boolean,
   adminUserId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ) {
   const [updated] = await db.update(institutionalBanners)
     .set({ active, updatedByAdminUserId: adminUserId, updatedAt: new Date() })
-    .where(and(eq(institutionalBanners.id, id), isNull(institutionalBanners.deletedAt)))
+    .where(and(eq(institutionalBanners.id, id), eq(institutionalBanners.tenantId, tenantId), isNull(institutionalBanners.deletedAt)))
     .returning();
   if (!updated) throw new AppError(404, "BANNER_NOT_FOUND", "Banner nao encontrado.");
-  await audit(db, {
-    adminUserId,
-    action: active ? "activate" : "deactivate",
-    resourceType: "institutional_banner",
-    resourceId: id,
-  });
+  await audit(db, { tenantId, adminUserId, action: active ? "activate" : "deactivate", resourceType: "institutional_banner", resourceId: id });
   return updated;
 }
 
@@ -438,21 +465,19 @@ export async function reorderInstitutionalBanners(
   placementKey: string,
   orderedIds: string[],
   adminUserId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ) {
   return db.transaction(async (tx) => {
     const current = await tx.select({ id: institutionalBanners.id })
       .from(institutionalBanners)
       .where(and(
+        eq(institutionalBanners.tenantId, tenantId),
         eq(institutionalBanners.placementKey, placementKey),
         isNull(institutionalBanners.deletedAt),
       ));
     const currentIds = new Set(current.map(({ id }) => id));
     if (currentIds.size !== orderedIds.length || orderedIds.some((id) => !currentIds.has(id))) {
-      throw new AppError(
-        422,
-        "INVALID_BANNER_ORDER",
-        "A ordenacao deve conter todos os banners do placement uma unica vez.",
-      );
+      throw new AppError(422, "INVALID_BANNER_ORDER", "A ordenacao deve conter todos os banners do placement uma unica vez.");
     }
 
     for (const [index, id] of orderedIds.entries()) {
@@ -460,21 +485,20 @@ export async function reorderInstitutionalBanners(
         displayOrder: index + 1,
         updatedByAdminUserId: adminUserId,
         updatedAt: new Date(),
-      }).where(eq(institutionalBanners.id, id));
+      }).where(and(eq(institutionalBanners.id, id), eq(institutionalBanners.tenantId, tenantId)));
     }
-    await audit(tx, {
-      adminUserId,
-      action: "reorder",
-      resourceType: "institutional_banner",
-      metadata: { placementKey, orderedIds },
-    });
+    await audit(tx, { tenantId, adminUserId, action: "reorder", resourceType: "institutional_banner", metadata: { placementKey, orderedIds } });
   });
 }
 
-export async function deleteInstitutionalBanner(id: string, adminUserId: string) {
+export async function deleteInstitutionalBanner(
+  id: string,
+  adminUserId: string,
+  tenantId = DEFAULT_TENANT_ID,
+) {
   await db.transaction(async (tx) => {
     const [banner] = await tx.select().from(institutionalBanners)
-      .where(and(eq(institutionalBanners.id, id), isNull(institutionalBanners.deletedAt)))
+      .where(and(eq(institutionalBanners.id, id), eq(institutionalBanners.tenantId, tenantId), isNull(institutionalBanners.deletedAt)))
       .limit(1);
     if (!banner) throw new AppError(404, "BANNER_NOT_FOUND", "Banner nao encontrado.");
 
@@ -483,14 +507,9 @@ export async function deleteInstitutionalBanner(id: string, adminUserId: string)
       deletedAt: new Date(),
       updatedByAdminUserId: adminUserId,
       updatedAt: new Date(),
-    }).where(eq(institutionalBanners.id, id));
+    }).where(and(eq(institutionalBanners.id, id), eq(institutionalBanners.tenantId, tenantId)));
     await tx.update(mediaAssets).set({ status: "orphaned", updatedAt: new Date() })
-      .where(eq(mediaAssets.id, banner.mediaAssetId));
-    await audit(tx, {
-      adminUserId,
-      action: "delete",
-      resourceType: "institutional_banner",
-      resourceId: id,
-    });
+      .where(and(eq(mediaAssets.id, banner.mediaAssetId), eq(mediaAssets.tenantId, tenantId)));
+    await audit(tx, { tenantId, adminUserId, action: "delete", resourceType: "institutional_banner", resourceId: id });
   });
 }

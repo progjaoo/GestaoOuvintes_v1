@@ -5,11 +5,13 @@ import { AppError } from "../lib/errors.js";
 import { normalizeText } from "../lib/normalization.js";
 import type { CampaignListFilters } from "../schemas/campaign.js";
 import { emitCampaignChanged } from "./campaign-events.js";
+import { DEFAULT_TENANT_ID } from "./tenant-service.js";
 
-export async function getPublicCampaign(slug: string) {
+export async function getPublicCampaign(slug: string, tenantId = DEFAULT_TENANT_ID) {
   const now = new Date();
   const campaign = await db.query.campaigns.findFirst({
     where: and(
+      eq(campaigns.tenantId, tenantId),
       eq(campaigns.slug, slug),
       eq(campaigns.status, "active"),
       lte(campaigns.startsAt, now),
@@ -18,10 +20,7 @@ export async function getPublicCampaign(slug: string) {
   });
 
   if (!campaign) {
-    return {
-      slug,
-      active: false,
-    };
+    return { slug, active: false };
   }
 
   return {
@@ -37,16 +36,27 @@ export async function getPublicCampaign(slug: string) {
   };
 }
 
-export async function getPublicPlacementCampaign(placementKey: string) {
+export async function getPublicPlacementCampaign(
+  placementKey: string,
+  tenantId = DEFAULT_TENANT_ID,
+) {
   const now = new Date();
   const [row] = await db
-    .select({
-      placement: campaignPlacements,
-      campaign: campaigns,
-    })
+    .select({ placement: campaignPlacements, campaign: campaigns })
     .from(campaignPlacements)
-    .leftJoin(campaigns, eq(campaignPlacements.campaignId, campaigns.id))
-    .where(eq(campaignPlacements.placementKey, placementKey))
+    .leftJoin(
+      campaigns,
+      and(
+        eq(campaignPlacements.campaignId, campaigns.id),
+        eq(campaigns.tenantId, tenantId),
+      ),
+    )
+    .where(
+      and(
+        eq(campaignPlacements.tenantId, tenantId),
+        eq(campaignPlacements.placementKey, placementKey),
+      ),
+    )
     .limit(1);
 
   const campaign = row?.campaign;
@@ -78,10 +88,13 @@ export async function getPublicPlacementCampaign(placementKey: string) {
   };
 }
 
-export async function findActiveCampaignForRegistration(slug: string) {
+export async function findActiveCampaignForRegistration(
+  slug: string,
+  tenantId = DEFAULT_TENANT_ID,
+) {
   const now = new Date();
   const campaign = await db.query.campaigns.findFirst({
-    where: eq(campaigns.slug, slug),
+    where: and(eq(campaigns.tenantId, tenantId), eq(campaigns.slug, slug)),
   });
 
   if (!campaign) {
@@ -98,15 +111,11 @@ export async function findActiveCampaignForRegistration(slug: string) {
   return campaign;
 }
 
-function buildCampaignConditions(filters: CampaignListFilters): SQL[] {
-  const conditions: SQL[] = [isNull(campaigns.archivedAt)];
+function buildCampaignConditions(filters: CampaignListFilters, tenantId: string): SQL[] {
+  const conditions: SQL[] = [eq(campaigns.tenantId, tenantId), isNull(campaigns.archivedAt)];
 
-  if (filters.status) {
-    conditions.push(eq(campaigns.status, filters.status));
-  }
-  if (filters.type) {
-    conditions.push(eq(campaigns.type, filters.type));
-  }
+  if (filters.status) conditions.push(eq(campaigns.status, filters.status));
+  if (filters.type) conditions.push(eq(campaigns.type, filters.type));
   if (filters.q) {
     const query = `%${filters.q}%`;
     const searchCondition = or(
@@ -114,17 +123,10 @@ function buildCampaignConditions(filters: CampaignListFilters): SQL[] {
       ilike(campaigns.title, query),
       ilike(campaigns.slug, query),
     );
-
-    if (searchCondition) {
-      conditions.push(searchCondition);
-    }
+    if (searchCondition) conditions.push(searchCondition);
   }
-  if (filters.startDate) {
-    conditions.push(gte(campaigns.startsAt, new Date(filters.startDate)));
-  }
-  if (filters.endDate) {
-    conditions.push(lte(campaigns.startsAt, new Date(filters.endDate)));
-  }
+  if (filters.startDate) conditions.push(gte(campaigns.startsAt, new Date(filters.startDate)));
+  if (filters.endDate) conditions.push(lte(campaigns.startsAt, new Date(filters.endDate)));
   if (filters.activeToday === true) {
     const now = new Date();
     conditions.push(
@@ -141,25 +143,20 @@ function buildCampaignConditions(filters: CampaignListFilters): SQL[] {
 
 function getCampaignOrderBy(filters: CampaignListFilters) {
   const direction = filters.sortDirection === "asc" ? asc : desc;
-
-  if (filters.sortBy === "startsAt") {
-    return direction(campaigns.startsAt);
-  }
-  if (filters.sortBy === "endsAt") {
-    return direction(campaigns.endsAt);
-  }
-  if (filters.sortBy === "name") {
-    return direction(campaigns.name);
-  }
-
+  if (filters.sortBy === "startsAt") return direction(campaigns.startsAt);
+  if (filters.sortBy === "endsAt") return direction(campaigns.endsAt);
+  if (filters.sortBy === "name") return direction(campaigns.name);
   return direction(campaigns.createdAt);
 }
 
-export async function listCampaigns(filters: CampaignListFilters) {
+export async function listCampaigns(
+  filters: CampaignListFilters,
+  tenantId = DEFAULT_TENANT_ID,
+) {
   return db
     .select()
     .from(campaigns)
-    .where(and(...buildCampaignConditions(filters)))
+    .where(and(...buildCampaignConditions(filters, tenantId)))
     .orderBy(getCampaignOrderBy(filters));
 }
 
@@ -177,10 +174,11 @@ interface CampaignInput {
   termsUrl?: string | null;
 }
 
-export async function createCampaign(input: CampaignInput) {
+export async function createCampaign(input: CampaignInput, tenantId = DEFAULT_TENANT_ID) {
   const [campaign] = await db
     .insert(campaigns)
     .values({
+      tenantId,
       slug: input.slug,
       name: normalizeText(input.name),
       title: normalizeText(input.title),
@@ -201,14 +199,13 @@ export async function createCampaign(input: CampaignInput) {
 export async function updateCampaign(
   id: string,
   input: Partial<CampaignInput>,
+  tenantId = DEFAULT_TENANT_ID,
 ) {
   const current = await db.query.campaigns.findFirst({
-    where: eq(campaigns.id, id),
+    where: and(eq(campaigns.id, id), eq(campaigns.tenantId, tenantId)),
   });
 
-  if (!current) {
-    throw new AppError(404, "CAMPAIGN_NOT_FOUND", "Campanha nao encontrada.");
-  }
+  if (!current) throw new AppError(404, "CAMPAIGN_NOT_FOUND", "Campanha nao encontrada.");
 
   const startsAt = input.startsAt ? new Date(input.startsAt) : current.startsAt;
   const endsAt =
@@ -219,11 +216,7 @@ export async function updateCampaign(
         : null;
 
   if (endsAt && endsAt <= startsAt) {
-    throw new AppError(
-      400,
-      "INVALID_CAMPAIGN_PERIOD",
-      "A data final deve ser posterior a data inicial.",
-    );
+    throw new AppError(400, "INVALID_CAMPAIGN_PERIOD", "A data final deve ser posterior a data inicial.");
   }
 
   const [campaign] = await db
@@ -232,23 +225,17 @@ export async function updateCampaign(
       ...(input.slug !== undefined && { slug: input.slug }),
       ...(input.name !== undefined && { name: normalizeText(input.name) }),
       ...(input.title !== undefined && { title: normalizeText(input.title) }),
-      ...(input.description !== undefined && {
-        description: normalizeText(input.description),
-      }),
+      ...(input.description !== undefined && { description: normalizeText(input.description) }),
       ...(input.status !== undefined && { status: input.status }),
       ...(input.type !== undefined && { type: input.type }),
       ...(input.startsAt !== undefined && { startsAt }),
       ...(input.endsAt !== undefined && { endsAt }),
-      ...(input.privacyNoticeVersion !== undefined && {
-        privacyNoticeVersion: input.privacyNoticeVersion,
-      }),
-      ...(input.privacyNoticeUrl !== undefined && {
-        privacyNoticeUrl: input.privacyNoticeUrl,
-      }),
+      ...(input.privacyNoticeVersion !== undefined && { privacyNoticeVersion: input.privacyNoticeVersion }),
+      ...(input.privacyNoticeUrl !== undefined && { privacyNoticeUrl: input.privacyNoticeUrl }),
       ...(input.termsUrl !== undefined && { termsUrl: input.termsUrl }),
       updatedAt: new Date(),
     })
-    .where(eq(campaigns.id, id))
+    .where(and(eq(campaigns.id, id), eq(campaigns.tenantId, tenantId)))
     .returning();
 
   return campaign;
@@ -258,30 +245,26 @@ export async function publishCampaignToPlacement(input: {
   campaignId: string;
   placementKey: string;
   adminUserId?: string;
+  tenantId?: string;
 }) {
+  const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
   const now = new Date();
   const campaign = await db.query.campaigns.findFirst({
-    where: eq(campaigns.id, input.campaignId),
+    where: and(eq(campaigns.id, input.campaignId), eq(campaigns.tenantId, tenantId)),
   });
 
-  if (!campaign) {
-    throw new AppError(404, "CAMPAIGN_NOT_FOUND", "Campanha nao encontrada.");
-  }
+  if (!campaign) throw new AppError(404, "CAMPAIGN_NOT_FOUND", "Campanha nao encontrada.");
 
   const isWithinPeriod =
     campaign.startsAt <= now && (!campaign.endsAt || campaign.endsAt > now);
-
   if (campaign.status !== "active" || !isWithinPeriod || campaign.archivedAt) {
-    throw new AppError(
-      409,
-      "CAMPAIGN_NOT_PUBLISHABLE",
-      "A campanha precisa estar ativa e dentro do periodo para ser publicada.",
-    );
+    throw new AppError(409, "CAMPAIGN_NOT_PUBLISHABLE", "A campanha precisa estar ativa e dentro do periodo para ser publicada.");
   }
 
   const [placement] = await db
     .insert(campaignPlacements)
     .values({
+      tenantId,
       placementKey: input.placementKey,
       campaignId: campaign.id,
       version: 1,
@@ -289,7 +272,7 @@ export async function publishCampaignToPlacement(input: {
       publishedByAdminUserId: input.adminUserId,
     })
     .onConflictDoUpdate({
-      target: campaignPlacements.placementKey,
+      target: [campaignPlacements.tenantId, campaignPlacements.placementKey],
       set: {
         campaignId: campaign.id,
         version: sql`${campaignPlacements.version} + 1`,
@@ -300,20 +283,13 @@ export async function publishCampaignToPlacement(input: {
     })
     .returning();
 
-  if (!placement) {
-    throw new AppError(
-      500,
-      "PLACEMENT_PUBLISH_FAILED",
-      "Falha ao publicar campanha.",
-    );
-  }
+  if (!placement) throw new AppError(500, "PLACEMENT_PUBLISH_FAILED", "Falha ao publicar campanha.");
 
-  emitCampaignChanged(input.placementKey, placement.version);
-
+  emitCampaignChanged(input.placementKey, placement.version, tenantId);
   return placement;
 }
 
-export async function listPlacements() {
+export async function listPlacements(tenantId = DEFAULT_TENANT_ID) {
   return db
     .select({
       id: campaignPlacements.id,
@@ -327,6 +303,13 @@ export async function listPlacements() {
       campaignStatus: campaigns.status,
     })
     .from(campaignPlacements)
-    .leftJoin(campaigns, eq(campaignPlacements.campaignId, campaigns.id))
+    .leftJoin(
+      campaigns,
+      and(
+        eq(campaignPlacements.campaignId, campaigns.id),
+        eq(campaigns.tenantId, tenantId),
+      ),
+    )
+    .where(eq(campaignPlacements.tenantId, tenantId))
     .orderBy(desc(campaignPlacements.updatedAt));
 }

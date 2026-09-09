@@ -30,9 +30,13 @@ describeIntegration("API integrada com PostgreSQL", () => {
     await db.execute(sql`DELETE FROM campaign_device_state`);
     await db.execute(sql`DELETE FROM sweepstake_draw_entry`);
     await db.execute(sql`DELETE FROM sweepstake_draw`);
+    await db.execute(sql`DELETE FROM listener_activity_log`);
+    await db.execute(sql`DELETE FROM listener_consent`);
+    await db.execute(sql`DELETE FROM listener_communication_preference`);
     await db.execute(sql`DELETE FROM campaign_participation`);
     await db.execute(sql`DELETE FROM listener_device`);
     await db.execute(sql`DELETE FROM listener_profile`);
+    await db.execute(sql`DELETE FROM listener_identity`);
     await db.execute(sql`DELETE FROM listener_registration`);
     app = await buildApp();
   });
@@ -122,6 +126,87 @@ describeIntegration("API integrada com PostgreSQL", () => {
 
     expect(invalid.statusCode).toBe(400);
     expect(outdatedNotice.statusCode).toBe(409);
+  });
+
+  it("reutiliza o perfil persistente em uma nova campanha", async () => {
+    const deviceToken = `${randomUUID()}${randomUUID()}`;
+    const session = await app!.inject({
+      method: "POST",
+      url: "/api/public/session/resolve",
+      headers: {
+        "x-device-token": deviceToken,
+        "x-platform": "web_desktop",
+        "x-forwarded-for": "10.0.0.41",
+      },
+      payload: { placement: "institutional_modal", platform: "web_desktop" },
+    });
+    expect(session.statusCode).toBe(200);
+
+    const firstCampaignId = session.json().campaign.id as string;
+    const first = await app!.inject({
+      method: "POST",
+      url: "/api/public/listeners/register-and-participate",
+      headers: {
+        "x-device-token": deviceToken,
+        "x-platform": "web_desktop",
+        "idempotency-key": randomUUID(),
+        "x-forwarded-for": "10.0.0.41",
+      },
+      payload: {
+        campaignId: firstCampaignId,
+        name: "Perfil Persistente",
+        neighborhood: "Retiro",
+        city: "Volta Redonda",
+        phone: "24999998888",
+        privacyNoticeVersion: session.json().campaign.privacyNoticeVersion,
+        privacyAcknowledged: true,
+        marketingOptIn: true,
+        source: "web",
+      },
+    });
+    expect(first.statusCode).toBe(201);
+
+    const secondCampaign = await pool.query<{ id: string }>(
+      `INSERT INTO campaign
+         (tenant_id, slug, name, title, description, status, starts_at,
+          ends_at, privacy_notice_version, privacy_notice_url, type)
+       VALUES (current_default_tenant_id(), $1, $2, $2, $3, 'active', now(),
+          now() + interval '30 days', '2026-08-01', '/privacidade', 'registration')
+       RETURNING id`,
+      [`persistencia-${randomUUID()}`, "Nova campanha", "Teste de reuso de perfil"],
+    );
+    const secondCampaignId = secondCampaign.rows[0]!.id;
+
+    const second = await app!.inject({
+      method: "POST",
+      url: `/api/public/campaigns/${secondCampaignId}/participations`,
+      headers: {
+        "x-device-token": deviceToken,
+        "x-platform": "web_desktop",
+        "x-forwarded-for": "10.0.0.41",
+      },
+    });
+    const repeated = await app!.inject({
+      method: "POST",
+      url: `/api/public/campaigns/${secondCampaignId}/participations`,
+      headers: {
+        "x-device-token": deviceToken,
+        "x-platform": "web_desktop",
+        "x-forwarded-for": "10.0.0.41",
+      },
+    });
+
+    expect(second.statusCode).toBe(201);
+    expect(repeated.statusCode).toBe(200);
+
+    const counts = await pool.query<{ profiles: string; participations: string }>(
+      `SELECT
+         (SELECT count(*) FROM listener_profile WHERE phone_normalized = '24999998888' AND deleted_at IS NULL) AS profiles,
+         (SELECT count(*) FROM campaign_participation cp
+            JOIN listener_profile lp ON lp.id = cp.listener_profile_id
+           WHERE lp.phone_normalized = '24999998888') AS participations`,
+    );
+    expect(counts.rows[0]).toEqual({ profiles: "1", participations: "2" });
   });
 
   it("protege rotas administrativas e autentica administrador", async () => {
@@ -517,6 +602,7 @@ describeIntegration("API integrada com PostgreSQL", () => {
           "x-device-token": deviceToken,
           "x-platform": "web_desktop",
           "idempotency-key": submissionToken,
+          "x-forwarded-for": "10.0.0.42",
         },
         payload: {
           campaignId,
@@ -645,11 +731,25 @@ describeIntegration("API integrada com PostgreSQL", () => {
     const campaignId = campaign.json().id as string;
     for (const [index, name] of ["Ana Sorteio", "Bruno Sorteio", "Carla Sorteio"].entries()) {
       const profile = await pool.query<{ id: string }>(
-        `INSERT INTO listener_profile
-           (name, neighborhood, city, phone, phone_normalized, status)
-         VALUES ($1, $2, $3, $4, $4, 'active')
+        `WITH identity AS (
+           INSERT INTO listener_identity
+             (tenant_id, provider, provider_subject, status)
+           VALUES (current_default_tenant_id(), 'anonymous', $1, 'active')
+           RETURNING id
+         )
+         INSERT INTO listener_profile
+           (tenant_id, listener_identity_id, name, neighborhood, city,
+            phone, phone_normalized, status)
+         SELECT current_default_tenant_id(), identity.id, $2, $3, $4, $5, $5, 'active'
+           FROM identity
          RETURNING id`,
-        [name, `Bairro ${index + 1}`, "Volta Redonda", `2499999000${index}`],
+        [
+          `integration-sweepstake-${randomUUID()}`,
+          name,
+          `Bairro ${index + 1}`,
+          "Volta Redonda",
+          `2499999100${index}`,
+        ],
       );
       await pool.query(
         `INSERT INTO campaign_participation

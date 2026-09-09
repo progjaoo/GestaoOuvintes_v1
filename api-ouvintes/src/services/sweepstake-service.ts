@@ -2,6 +2,7 @@ import { createHash, randomInt } from "node:crypto";
 import type { PoolClient } from "pg";
 import { pool } from "../database/client.js";
 import { AppError } from "../lib/errors.js";
+import { DEFAULT_TENANT_ID } from "./tenant-service.js";
 
 const DRAW_ALGORITHM = "node_crypto_random_int_v1";
 const REDRAW_REASON = "manual_redraw_from_result_modal";
@@ -33,6 +34,7 @@ interface CampaignRow {
 
 interface DrawRow {
   id: string;
+  tenant_id: string;
   campaign_id: string;
   sequence: number;
   eligible_count: number;
@@ -112,10 +114,11 @@ function assertCampaignCanDraw(campaign: CampaignRow): void {
 async function getCampaign(
   client: Pick<PoolClient, "query">,
   campaignId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ): Promise<CampaignRow> {
   const result = await client.query<CampaignRow>(
-    "SELECT id, name, status, type FROM campaign WHERE id = $1 AND archived_at IS NULL",
-    [campaignId],
+    "SELECT id, name, status, type FROM campaign WHERE id = $1 AND tenant_id = $2 AND archived_at IS NULL",
+    [campaignId, tenantId],
   );
   const campaign = result.rows[0];
   if (!campaign) throw campaignNotFound();
@@ -125,15 +128,16 @@ async function getCampaign(
 async function countLegacyUnlinked(
   client: Pick<PoolClient, "query">,
   campaignId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ): Promise<number> {
   const result = await client.query<{ total: string }>(
     "SELECT count(*)::text AS total " +
       "FROM listener_registration lr " +
-      "WHERE lr.campaign_id = $1 AND lr.deleted_at IS NULL " +
+      "WHERE lr.tenant_id = $2 AND lr.campaign_id = $1 AND lr.deleted_at IS NULL " +
       "AND NOT EXISTS (" +
       "  SELECT 1 FROM campaign_participation cp " +
       "  JOIN listener_profile lp ON lp.id = cp.listener_profile_id " +
-      "  WHERE cp.campaign_id = lr.campaign_id " +
+      "  WHERE cp.tenant_id = $2 AND cp.campaign_id = lr.campaign_id " +
       "  AND (" +
       "    (lr.phone_normalized IS NOT NULL AND lp.phone_normalized = lr.phone_normalized) " +
       "    OR (lr.phone_normalized IS NULL " +
@@ -142,7 +146,7 @@ async function countLegacyUnlinked(
       "      AND lower(lp.neighborhood) = lower(lr.neighborhood))" +
       "  )" +
       ")",
-    [campaignId],
+    [campaignId, tenantId],
   );
   return Number(result.rows[0]?.total ?? 0);
 }
@@ -150,6 +154,7 @@ async function countLegacyUnlinked(
 async function listCurrentCandidates(
   client: Pick<PoolClient, "query">,
   campaignId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ): Promise<SweepstakeCandidate[]> {
   const result = await client.query<{
     participation_id: string;
@@ -161,11 +166,11 @@ async function listCurrentCandidates(
     "SELECT cp.id AS participation_id, lp.name, lp.city, lp.neighborhood, lp.phone " +
       "FROM campaign_participation cp " +
       "JOIN listener_profile lp ON lp.id = cp.listener_profile_id " +
-      "WHERE cp.campaign_id = $1 " +
-      "AND cp.status IN ('eligible', 'entered') " +
+      "WHERE cp.tenant_id = $2 AND cp.campaign_id = $1 " +
+      "AND lp.tenant_id = $2 AND cp.status IN ('eligible', 'entered') " +
       "AND lp.status = 'active' AND lp.deleted_at IS NULL " +
       "ORDER BY cp.id",
-    [campaignId],
+    [campaignId, tenantId],
   );
   return result.rows.map((row) => ({
     participationId: row.participation_id,
@@ -180,6 +185,7 @@ async function listRedrawCandidates(
   client: Pick<PoolClient, "query">,
   campaignId: string,
   rootDrawId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ): Promise<SweepstakeCandidate[]> {
   const result = await client.query<{
     participation_id: string;
@@ -192,16 +198,16 @@ async function listRedrawCandidates(
       "FROM sweepstake_draw_entry sde " +
       "JOIN campaign_participation cp ON cp.id = sde.participation_id " +
       "JOIN listener_profile lp ON lp.id = cp.listener_profile_id " +
-      "WHERE sde.draw_id = $2 AND cp.campaign_id = $1 " +
+      "WHERE sde.tenant_id = $3 AND sde.draw_id = $2 AND cp.tenant_id = $3 AND cp.campaign_id = $1 " +
       "AND cp.status IN ('eligible', 'entered') " +
       "AND lp.status = 'active' AND lp.deleted_at IS NULL " +
       "AND NOT EXISTS (" +
       "  SELECT 1 FROM sweepstake_draw sd " +
-      "  WHERE sd.campaign_id = $1 " +
+      "  WHERE sd.tenant_id = $3 AND sd.campaign_id = $1 " +
       "  AND sd.status IN ('selected', 'superseded') " +
       "  AND sd.winner_participation_id = cp.id" +
       ") ORDER BY cp.id",
-    [campaignId, rootDrawId],
+    [campaignId, rootDrawId, tenantId],
   );
   return result.rows.map((row) => ({
     participationId: row.participation_id,
@@ -216,22 +222,24 @@ async function insertEntries(
   client: Pick<PoolClient, "query">,
   drawId: string,
   candidates: SweepstakeCandidate[],
+  tenantId = DEFAULT_TENANT_ID,
 ): Promise<void> {
   const entries = candidates.map((candidate, ordinal) => ({
     participation_id: candidate.participationId,
     ordinal,
   }));
   await client.query(
-    "INSERT INTO sweepstake_draw_entry (draw_id, participation_id, ordinal) " +
-      "SELECT $1, item.participation_id::uuid, item.ordinal " +
-      "FROM jsonb_to_recordset($2::jsonb) AS item(participation_id text, ordinal integer)",
-    [drawId, JSON.stringify(entries)],
+    "INSERT INTO sweepstake_draw_entry (tenant_id, draw_id, participation_id, ordinal) " +
+      "SELECT $1, $2, item.participation_id::uuid, item.ordinal " +
+      "FROM jsonb_to_recordset($3::jsonb) AS item(participation_id text, ordinal integer)",
+    [tenantId, drawId, JSON.stringify(entries)],
   );
 }
 
 async function getDrawCandidates(
   client: Pick<PoolClient, "query">,
   drawId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ): Promise<SweepstakeCandidate[]> {
   const result = await client.query<{
     participation_id: string;
@@ -244,8 +252,8 @@ async function getDrawCandidates(
       "FROM sweepstake_draw_entry sde " +
       "JOIN campaign_participation cp ON cp.id = sde.participation_id " +
       "JOIN listener_profile lp ON lp.id = cp.listener_profile_id " +
-      "WHERE sde.draw_id = $1 ORDER BY sde.ordinal",
-    [drawId],
+      "WHERE sde.tenant_id = $2 AND sde.draw_id = $1 AND cp.tenant_id = $2 AND lp.tenant_id = $2 ORDER BY sde.ordinal",
+    [drawId, tenantId],
   );
   return result.rows.map((row) => ({
     participationId: row.participation_id,
@@ -259,6 +267,7 @@ async function getDrawCandidates(
 async function getWinner(
   client: Pick<PoolClient, "query">,
   participationId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ): Promise<SweepstakeCandidate> {
   const result = await client.query<{
     participation_id: string;
@@ -270,8 +279,8 @@ async function getWinner(
     "SELECT cp.id AS participation_id, lp.name, lp.city, lp.neighborhood, lp.phone " +
       "FROM campaign_participation cp " +
       "JOIN listener_profile lp ON lp.id = cp.listener_profile_id " +
-      "WHERE cp.id = $1",
-    [participationId],
+      "WHERE cp.id = $1 AND cp.tenant_id = $2 AND lp.tenant_id = $2",
+    [participationId, tenantId],
   );
   const row = result.rows[0];
   if (!row) {
@@ -289,9 +298,10 @@ async function getWinner(
 async function hydrateDraw(
   client: Pick<PoolClient, "query">,
   draw: DrawRow,
+  tenantId = DEFAULT_TENANT_ID,
 ): Promise<SweepstakeDrawResponse> {
-  const winner = await getWinner(client, draw.winner_participation_id);
-  const candidates = await getDrawCandidates(client, draw.id);
+  const winner = await getWinner(client, draw.winner_participation_id, tenantId);
+  const candidates = await getDrawCandidates(client, draw.id, tenantId);
   return {
     drawId: draw.id,
     campaignId: draw.campaign_id,
@@ -306,12 +316,13 @@ async function hydrateDraw(
 async function findDrawByRequestToken(
   client: Pick<PoolClient, "query">,
   requestToken: string,
+  tenantId = DEFAULT_TENANT_ID,
 ): Promise<DrawRow | null> {
   const result = await client.query<DrawRow>(
-    "SELECT id, campaign_id, sequence, eligible_count, winner_participation_id, " +
+    "SELECT id, tenant_id, campaign_id, sequence, eligible_count, winner_participation_id, " +
       "root_draw_id, previous_draw_id, created_at " +
-      "FROM sweepstake_draw WHERE request_token = $1",
-    [requestToken],
+      "FROM sweepstake_draw WHERE request_token = $1 AND tenant_id = $2",
+    [requestToken, tenantId],
   );
   return result.rows[0] ?? null;
 }
@@ -319,19 +330,22 @@ async function findDrawByRequestToken(
 async function findCurrentDraw(
   client: Pick<PoolClient, "query">,
   campaignId: string,
+  tenantId = DEFAULT_TENANT_ID,
 ): Promise<DrawRow | null> {
   const result = await client.query<DrawRow>(
-    "SELECT id, campaign_id, sequence, eligible_count, winner_participation_id, " +
+    "SELECT id, tenant_id, campaign_id, sequence, eligible_count, winner_participation_id, " +
       "root_draw_id, previous_draw_id, created_at " +
-      "FROM sweepstake_draw WHERE campaign_id = $1 AND status = 'selected' LIMIT 1",
-    [campaignId],
+      "FROM sweepstake_draw WHERE tenant_id = $2 AND campaign_id = $1 AND status = 'selected' LIMIT 1",
+    [campaignId, tenantId],
   );
   return result.rows[0] ?? null;
 }
 
+
 async function addAudit(
   client: Pick<PoolClient, "query">,
   input: {
+    tenantId: string;
     adminUserId: string;
     action: string;
     drawId: string;
@@ -343,9 +357,10 @@ async function addAudit(
 ): Promise<void> {
   await client.query(
     "INSERT INTO admin_audit_log " +
-      "(admin_user_id, action, resource_type, resource_id, metadata) " +
-      "VALUES ($1, $2, 'sweepstake_draw', $3, $4::jsonb)",
+      "(tenant_id, admin_user_id, action, resource_type, resource_id, metadata) " +
+      "VALUES ($1, $2, $3, 'sweepstake_draw', $4, $5::jsonb)",
     [
+      input.tenantId,
       input.adminUserId,
       input.action,
       input.drawId,
@@ -360,13 +375,16 @@ async function addAudit(
   );
 }
 
-export async function getSweepstakeStatus(campaignId: string) {
+export async function getSweepstakeStatus(
+  campaignId: string,
+  tenantId = DEFAULT_TENANT_ID,
+) {
   const client = await pool.connect();
   try {
-    const campaign = await getCampaign(client, campaignId);
-    const candidates = await listCurrentCandidates(client, campaignId);
-    const legacyUnlinkedCount = await countLegacyUnlinked(client, campaignId);
-    const current = await findCurrentDraw(client, campaignId);
+    const campaign = await getCampaign(client, campaignId, tenantId);
+    const candidates = await listCurrentCandidates(client, campaignId, tenantId);
+    const legacyUnlinkedCount = await countLegacyUnlinked(client, campaignId, tenantId);
+    const current = await findCurrentDraw(client, campaignId, tenantId);
     return {
       campaignId: campaign.id,
       campaignName: campaign.name,
@@ -380,7 +398,7 @@ export async function getSweepstakeStatus(campaignId: string) {
         candidates.length > 0 &&
         legacyUnlinkedCount === 0 &&
         current === null,
-      currentDraw: current ? await hydrateDraw(client, current) : null,
+      currentDraw: current ? await hydrateDraw(client, current, tenantId) : null,
     };
   } finally {
     client.release();
@@ -391,28 +409,30 @@ export async function drawSweepstake(input: {
   campaignId: string;
   adminUserId: string;
   requestToken: string;
+  tenantId?: string;
 }): Promise<DrawResult> {
+  const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-      "sweepstake:" + input.campaignId,
+      `sweepstake:${tenantId}:${input.campaignId}`,
     ]);
 
-    const repeated = await findDrawByRequestToken(client, input.requestToken);
+    const repeated = await findDrawByRequestToken(client, input.requestToken, tenantId);
     if (repeated) {
       if (repeated.campaign_id !== input.campaignId) {
         throw new AppError(409, "DRAW_CONFLICT", "A chave de idempotencia pertence a outra campanha.");
       }
-      const draw = await hydrateDraw(client, repeated);
+      const draw = await hydrateDraw(client, repeated, tenantId);
       await client.query("COMMIT");
       return { replayed: true, draw };
     }
 
-    const campaign = await getCampaign(client, input.campaignId);
+    const campaign = await getCampaign(client, input.campaignId, tenantId);
     assertCampaignCanDraw(campaign);
 
-    if (await findCurrentDraw(client, input.campaignId)) {
+    if (await findCurrentDraw(client, input.campaignId, tenantId)) {
       throw new AppError(
         409,
         "DRAW_ALREADY_EXISTS",
@@ -420,7 +440,7 @@ export async function drawSweepstake(input: {
       );
     }
 
-    const legacyUnlinkedCount = await countLegacyUnlinked(client, input.campaignId);
+    const legacyUnlinkedCount = await countLegacyUnlinked(client, input.campaignId, tenantId);
     if (legacyUnlinkedCount > 0) {
       throw new AppError(
         409,
@@ -430,7 +450,7 @@ export async function drawSweepstake(input: {
       );
     }
 
-    const candidates = await listCurrentCandidates(client, input.campaignId);
+    const candidates = await listCurrentCandidates(client, input.campaignId, tenantId);
     if (candidates.length === 0) {
       throw new AppError(
         409,
@@ -445,12 +465,13 @@ export async function drawSweepstake(input: {
     );
     const inserted = await client.query<DrawRow>(
       "INSERT INTO sweepstake_draw " +
-        "(campaign_id, sequence, status, winner_participation_id, " +
+        "(tenant_id, campaign_id, sequence, status, winner_participation_id, " +
         "executed_by_admin_user_id, algorithm, eligible_count, entries_hash, request_token) " +
-        "VALUES ($1, 1, 'selected', $2, $3, $4, $5, $6, $7) " +
-        "RETURNING id, campaign_id, sequence, eligible_count, winner_participation_id, " +
+        "VALUES ($1, $2, 1, 'selected', $3, $4, $5, $6, $7, $8) " +
+        "RETURNING id, tenant_id, campaign_id, sequence, eligible_count, winner_participation_id, " +
         "root_draw_id, previous_draw_id, created_at",
       [
+        tenantId,
         input.campaignId,
         winner.participationId,
         input.adminUserId,
@@ -461,8 +482,9 @@ export async function drawSweepstake(input: {
       ],
     );
     const drawRow = inserted.rows[0]!;
-    await insertEntries(client, drawRow.id, candidates);
+    await insertEntries(client, drawRow.id, candidates, tenantId);
     await addAudit(client, {
+      tenantId,
       adminUserId: input.adminUserId,
       action: "sweepstake.draw",
       drawId: drawRow.id,
@@ -498,28 +520,30 @@ export async function redrawSweepstake(input: {
   adminUserId: string;
   requestToken: string;
   previousDrawId: string;
+  tenantId?: string;
 }): Promise<DrawResult> {
+  const tenantId = input.tenantId ?? DEFAULT_TENANT_ID;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-      "sweepstake:" + input.campaignId,
+      `sweepstake:${tenantId}:${input.campaignId}`,
     ]);
 
-    const repeated = await findDrawByRequestToken(client, input.requestToken);
+    const repeated = await findDrawByRequestToken(client, input.requestToken, tenantId);
     if (repeated) {
       if (repeated.campaign_id !== input.campaignId) {
         throw new AppError(409, "DRAW_CONFLICT", "A chave de idempotencia pertence a outra campanha.");
       }
-      const draw = await hydrateDraw(client, repeated);
+      const draw = await hydrateDraw(client, repeated, tenantId);
       await client.query("COMMIT");
       return { replayed: true, draw };
     }
 
-    const campaign = await getCampaign(client, input.campaignId);
+    const campaign = await getCampaign(client, input.campaignId, tenantId);
     assertCampaignCanDraw(campaign);
 
-    const current = await findCurrentDraw(client, input.campaignId);
+    const current = await findCurrentDraw(client, input.campaignId, tenantId);
     if (!current || current.id !== input.previousDrawId) {
       throw new AppError(
         409,
@@ -533,6 +557,7 @@ export async function redrawSweepstake(input: {
       client,
       input.campaignId,
       rootDrawId,
+      tenantId,
     );
     if (candidates.length === 0) {
       throw new AppError(
@@ -550,19 +575,20 @@ export async function redrawSweepstake(input: {
 
     await client.query(
       "UPDATE sweepstake_draw SET status = 'superseded', superseded_at = now() " +
-        "WHERE id = $1 AND status = 'selected'",
-      [current.id],
+        "WHERE id = $1 AND tenant_id = $2 AND status = 'selected'",
+      [current.id, tenantId],
     );
 
     const inserted = await client.query<DrawRow>(
       "INSERT INTO sweepstake_draw " +
-        "(campaign_id, sequence, status, winner_participation_id, root_draw_id, " +
+        "(tenant_id, campaign_id, sequence, status, winner_participation_id, root_draw_id, " +
         "previous_draw_id, executed_by_admin_user_id, algorithm, eligible_count, " +
         "entries_hash, reason_code, request_token) " +
-        "VALUES ($1, $2, 'selected', $3, $4, $5, $6, $7, $8, $9, $10, $11) " +
-        "RETURNING id, campaign_id, sequence, eligible_count, winner_participation_id, " +
+        "VALUES ($1, $2, $3, 'selected', $4, $5, $6, $7, $8, $9, $10, $11, $12) " +
+        "RETURNING id, tenant_id, campaign_id, sequence, eligible_count, winner_participation_id, " +
         "root_draw_id, previous_draw_id, created_at",
       [
+        tenantId,
         input.campaignId,
         sequence,
         winner.participationId,
@@ -577,8 +603,9 @@ export async function redrawSweepstake(input: {
       ],
     );
     const drawRow = inserted.rows[0]!;
-    await insertEntries(client, drawRow.id, candidates);
+    await insertEntries(client, drawRow.id, candidates, tenantId);
     await addAudit(client, {
+      tenantId,
       adminUserId: input.adminUserId,
       action: "sweepstake.redraw",
       drawId: drawRow.id,

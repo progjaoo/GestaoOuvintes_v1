@@ -10,11 +10,14 @@ import { AppError } from "./lib/errors.js";
 import { adminAuthRoutes } from "./routes/admin-auth.js";
 import { adminCampaignRoutes } from "./routes/admin-campaigns.js";
 import { adminRegistrationRoutes } from "./routes/admin-registrations.js";
+import { adminListenerProfileRoutes } from "./routes/admin-listener-profiles.js";
 import { adminSweepstakeRoutes } from "./routes/admin-sweepstakes.js";
 import { adminInstitutionalBannerRoutes } from "./routes/admin-institutional-banners.js";
 import { healthRoutes } from "./routes/health.js";
 import { publicRoutes } from "./routes/public.js";
 import { publicInstitutionalBannerRoutes } from "./routes/public-institutional-banners.js";
+import { publicListenerProfileRoutes } from "./routes/public-listener-profile.js";
+import { clerkWebhookRoutes } from "./routes/clerk-webhooks.js";
 
 function isDevelopmentLocalOrigin(origin: string) {
   if (env.NODE_ENV !== "development") return false;
@@ -134,6 +137,14 @@ export async function buildApp(): Promise<FastifyInstance> {
       });
     }
 
+    if (isErrorRecord(error) && error.statusCode === 429) {
+      return reply.code(429).send({
+        statusCode: 429,
+        code: "RATE_LIMIT_EXCEEDED",
+        message: "Muitas tentativas. Aguarde antes de tentar novamente.",
+      });
+    }
+
     const normalizedError =
       error instanceof Error ? error : new Error("Erro desconhecido.");
 
@@ -199,7 +210,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(healthRoutes);
+  if (env.CLERK_WEBHOOK_ENABLED) {
+    await app.register(clerkWebhookRoutes, { prefix: "/api/webhooks" });
+  }
   await app.register(publicRoutes, { prefix: "/api/public" });
+  await app.register(publicListenerProfileRoutes, { prefix: "/api/public" });
   await app.register(publicInstitutionalBannerRoutes, {
     prefix: "/api/public/institutional-banners",
   });
@@ -207,6 +222,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminCampaignRoutes, { prefix: "/api/admin/campaigns" });
   await app.register(adminRegistrationRoutes, {
     prefix: "/api/admin/listener-registrations",
+  });
+  await app.register(adminListenerProfileRoutes, {
+    prefix: "/api/admin/listener-profiles",
   });
   await app.register(adminSweepstakeRoutes, {
     prefix: "/api/admin/sweepstakes",

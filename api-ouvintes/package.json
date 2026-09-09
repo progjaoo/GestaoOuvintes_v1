@@ -19,10 +19,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "RUN_INTEGRATION_TESTS=true vitest run tests/integration",
-    "participants:backfill": "tsx scripts/backfill-campaign-participations.ts"
+    "participants:backfill": "tsx scripts/backfill-campaign-participations.ts",
+    "link:clerk-admin": "tsx scripts/link-clerk-admin.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1091.0",
+    "@clerk/backend": "^3.16.12",
     "@fastify/cors": "^11.1.0",
     "@fastify/helmet": "^13.0.2",
     "@fastify/jwt": "^10.0.0",
@@ -48,5 +50,8 @@
   },
   "overrides": {
     "uuid": "11.1.1"
+  },
+  "optionalDependencies": {
+    "@emnapi/runtime": "1.11.3"
   }
 }
