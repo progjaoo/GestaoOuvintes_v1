@@ -103,6 +103,19 @@ publicada nele pelo `painel-adm` é a mesma campanha resolvida pelo site
 institucional e pelo aplicativo nativo. Os clientes não devem manter um slug ou
 placement alternativo para o mobile.
 
+### `GET /api/public/placements/:placementKey/campaign`
+
+Retorna apenas a configuração pública da campanha publicada no placement. A
+resposta é cacheada pela CDN da Vercel por 60 segundos e varia por `Origin`,
+`Host` e `X-Forwarded-Host`, para manter a separação entre origens e tenants.
+Uma publicação ou pausa pode levar até 60 segundos para aparecer para novos
+visitantes. A consulta não contém dados de ouvinte.
+
+O institucional usa essa consulta cacheável primeiro. Só chama
+`POST /api/public/session/resolve` quando há campanha ativa. Sem campanha, não
+resolve dispositivo nem abre conexão SSE. A sessão continua personalizada e
+sem cache.
+
 Plataformas aceitas:
 
 ```text
@@ -206,6 +219,10 @@ X-Platform: expo_ios
 As respostas administrativas e
 `GET /api/public/institutional-banners?placement=home_hero` incluem
 `actionType`:
+
+O endpoint público de banners usa cache compartilhado da Vercel por 60
+segundos, variando por origem e host. Atualizações e desativações podem levar
+até esse intervalo para se propagar pelo CDN.
 
 ```text
 none | external_url | listener_registration_modal

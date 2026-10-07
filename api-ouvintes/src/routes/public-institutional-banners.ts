@@ -19,6 +19,7 @@ export const publicInstitutionalBannerRoutes: FastifyPluginAsync = async (app) =
     const etag = `W/"institutional-banners-${request.tenant!.tenantId}-${result.version}"`;
 
     reply.header("Cache-Control", result.cacheControl);
+    reply.header("Vary", "Origin, Host, X-Forwarded-Host");
     reply.header("ETag", etag);
     if (request.headers["if-none-match"] === etag) {
       return reply.code(304).send();

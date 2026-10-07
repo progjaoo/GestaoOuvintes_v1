@@ -36,7 +36,8 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
   app.get("/placements/:placementKey/campaign", async (request, reply) => {
     const { placementKey } = placementParamsSchema.parse(request.params);
 
-    reply.header("Cache-Control", "no-store, max-age=0");
+    reply.header("Cache-Control", "public, max-age=0, s-maxage=60");
+    reply.header("Vary", "Origin, Host, X-Forwarded-Host");
     return getPublicPlacementCampaign(placementKey, request.tenant!.tenantId);
   });
 

@@ -21,7 +21,7 @@ import {
 } from "./media-storage/media-object-key.js";
 import { DEFAULT_TENANT_ID } from "./tenant-service.js";
 
-const PUBLIC_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
+const PUBLIC_CACHE_CONTROL = "public, max-age=0, s-maxage=60";
 const OBJECT_CACHE_CONTROL = "public, max-age=31536000, immutable";
 const EXISTING_OBJECT_MIME_TYPES: Record<string, string> = {
   avif: "image/avif",

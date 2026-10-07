@@ -67,6 +67,38 @@ describeIntegration("API integrada com PostgreSQL", () => {
     });
   });
 
+  it("serve disponibilidade publica do placement com cache CDN e variacao segura", async () => {
+    const response = await app!.inject({
+      method: "GET",
+      url: "/api/public/placements/institutional_modal/campaign",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      placement: "institutional_modal",
+      campaign: { slug: "lancamento-institucional-2026", active: true },
+    });
+    expect(response.headers["cache-control"]).toBe(
+      "public, max-age=0, s-maxage=60",
+    );
+    expect(response.headers.vary?.toLowerCase()).toContain("origin");
+    expect(response.headers.vary?.toLowerCase()).toContain("x-forwarded-host");
+  });
+
+  it("serve banners institucionais com cache CDN curto", async () => {
+    const response = await app!.inject({
+      method: "GET",
+      url: "/api/public/institutional-banners?placement=home_hero",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe(
+      "public, max-age=0, s-maxage=60",
+    );
+    expect(response.headers.vary?.toLowerCase()).toContain("origin");
+    expect(response.headers.vary?.toLowerCase()).toContain("x-forwarded-host");
+  });
+
   it("cria cadastro com telefone obrigatorio e impede duplicacao por idempotencia", async () => {
     const submissionToken = randomUUID();
     const payload = {
