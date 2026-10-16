@@ -1,5 +1,4 @@
 import type { FastifyPluginAsync } from "fastify";
-import { randomUUID } from "node:crypto";
 import { env } from "../config/env.js";
 import { campaignSlugParamsSchema, placementParamsSchema } from "../schemas/campaign.js";
 import {
@@ -18,7 +17,6 @@ import {
   resolvePublicSession,
   updateCampaignDeviceState,
 } from "../services/public-session-service.js";
-import { addCampaignEventClient } from "../services/campaign-events.js";
 import {
   getSnapshotCampaign,
   getSnapshotPlacement,
@@ -81,39 +79,10 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     return resolvePublicSession({ ...input, deviceToken });
   });
 
-  app.get("/events", async (request, reply) => {
-    const query = request.query as { placement?: string };
-    const placement = placementParamsSchema.shape.placementKey.parse(
-      query.placement ?? "institutional_modal",
-    );
-
-    reply.hijack();
-    reply.raw.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    });
-
-    const send = (event: string, data: unknown) => {
-      reply.raw.write(`event: ${event}\n`);
-      reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
-    };
-
-    send("heartbeat", { placement, now: new Date().toISOString() });
-    const removeClient = addCampaignEventClient({
-      id: randomUUID(),
-      placement,
-      send,
-    });
-    const heartbeat = setInterval(() => {
-      send("heartbeat", { placement, now: new Date().toISOString() });
-    }, 25_000);
-
-    request.raw.on("close", () => {
-      clearInterval(heartbeat);
-      removeClient();
-    });
+  app.get("/events", async (_request, reply) => {
+    // HTTP 204 tells EventSource clients to stop reconnecting instead of holding
+    // serverless invocations open for heartbeats that no longer drive the UI.
+    return reply.code(204).header("Cache-Control", "no-store").send();
   });
 
   app.post(

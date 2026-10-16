@@ -46,6 +46,17 @@ describeLegacy("compatibilidade com producao nas migrations 0001-0006", () => {
     await pool.end();
   });
 
+  it("encerra o endpoint SSE legado sem manter a funcao ativa", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/public/events?placement=institutional_modal",
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.body).toBe("");
+  });
+
   it("100 resolucoes sem campanha nao criam nem atualizam dispositivos ou estados", async () => {
     const beforeDevices = await db.execute<{ count: string }>(sql`
       SELECT count(*)::text AS count FROM listener_device

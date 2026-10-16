@@ -68,6 +68,12 @@ até 60 segundos. Com `PUBLIC_CONFIG_READ_MODE=r2`, são servidos pelo snapshot
 namespaced; snapshot ausente/inválido retorna `503`, sem fallback ao PostgreSQL.
 O modo padrão continua sendo `database`.
 
+### `GET /api/public/events`
+
+O endpoint SSE legado responde `204 No Content` e `Cache-Control: no-store`.
+Assim, clientes `EventSource` encerram a conexão sem manter uma Function ativa
+nem tentar reconectar automaticamente.
+
 ### `POST /api/public/listener-registrations`
 
 ```json
