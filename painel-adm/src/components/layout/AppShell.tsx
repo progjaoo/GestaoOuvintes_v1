@@ -116,7 +116,7 @@ export function AppShell({ children }: PropsWithChildren) {
         toast.error("A publicação da configuração pública está desativada.");
       }
     } catch {
-      toast.error("Não foi possível republicar. A pendência continua registrada.");
+      toast.error("Não foi possível republicar a configuração pública. Tente novamente.");
     } finally {
       setRepublishing(false);
     }
@@ -192,6 +192,20 @@ export function AppShell({ children }: PropsWithChildren) {
         </header>
 
         <main className="min-h-screen p-4 sm:p-6 lg:p-8 xl:p-10">
+          {user?.role === "admin" && !publicConfigPending && (
+            <div className="mb-3 flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleRepublish()}
+                disabled={republishing}
+                title="Publica campanhas e banners no snapshot de leitura da API."
+              >
+                <RefreshCw className={`h-4 w-4 ${republishing ? "animate-spin" : ""}`} />
+                Republicar configuração pública
+              </Button>
+            </div>
+          )}
           {publicConfigPending && user?.role === "admin" && (
             <div
               role="status"
