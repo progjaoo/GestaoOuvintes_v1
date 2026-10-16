@@ -1,0 +1,17 @@
+name: radio88-plan049-legacy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: radio88_hotfix_compute_test
+      POSTGRES_USER: radio88_user
+      POSTGRES_PASSWORD: radio88_hotfix_test_password
+      TZ: America/Sao_Paulo
+    ports:
+      - "127.0.0.1:5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U radio88_user -d radio88_hotfix_compute_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20

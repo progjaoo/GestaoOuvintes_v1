@@ -63,6 +63,11 @@ Campanha ausente, pausada, futura ou encerrada:
 }
 ```
 
+Os GETs públicos de campanha, placement e banners usam cache compartilhado de
+até 60 segundos. Com `PUBLIC_CONFIG_READ_MODE=r2`, são servidos pelo snapshot
+namespaced; snapshot ausente/inválido retorna `503`, sem fallback ao PostgreSQL.
+O modo padrão continua sendo `database`.
+
 ### `POST /api/public/listener-registrations`
 
 ```json

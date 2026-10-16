@@ -14,8 +14,15 @@ import {
 } from "../schemas/institutional-banner.js";
 import { processBannerImage } from "./media-storage/media-image-processor.js";
 import type { MediaStorage } from "./media-storage/media-storage.js";
+import {
+  getSnapshotBanners,
+  isPublicConfigSnapshotReadEnabled,
+  publicConfigCacheControl,
+  readPublicConfigSnapshot,
+} from "./public-config-snapshot.js";
 
-const PUBLIC_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
+const PUBLIC_CACHE_CONTROL =
+  "public, max-age=0, s-maxage=60, stale-while-revalidate=60";
 const OBJECT_CACHE_CONTROL = "public, max-age=31536000, immutable";
 const EXISTING_OBJECT_MIME_TYPES: Record<string, string> = {
   avif: "image/avif",
@@ -123,6 +130,13 @@ export async function listAdminInstitutionalBanners(placementKey = "home_hero") 
 }
 
 export async function listPublicInstitutionalBanners(placementKey: string) {
+  if (isPublicConfigSnapshotReadEnabled()) {
+    const snapshot = await readPublicConfigSnapshot();
+    return {
+      ...getSnapshotBanners(snapshot, placementKey),
+      cacheControl: publicConfigCacheControl(snapshot),
+    };
+  }
   if (!env.R2_PUBLIC_BASE_URL) {
     return { version: 0, items: [], cacheControl: PUBLIC_CACHE_CONTROL };
   }

@@ -6,6 +6,7 @@ import {
   Edit3,
   Filter,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   Send,
@@ -98,8 +99,6 @@ export function CampaignsPage() {
   const campaignsQuery = useQuery({
     queryKey: ["campaigns", apiFilters],
     queryFn: () => api.listCampaigns(apiFilters),
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 
@@ -112,6 +111,10 @@ export function CampaignsPage() {
   const institutionalPlacement = placementsQuery.data?.items.find(
     (placement) => placement.placementKey === INSTITUTIONAL_MODAL_PLACEMENT,
   );
+
+  const refreshCampaigns = async () => {
+    await Promise.all([campaignsQuery.refetch(), placementsQuery.refetch()]);
+  };
 
   const saveMutation = useMutation({
     mutationFn: async ({
@@ -193,12 +196,24 @@ export function CampaignsPage() {
           title="Campanhas"
           description="Controle quando o formulário público pode receber cadastros e qual aviso de privacidade deve ser exibido."
           actions={
-            user?.role === "admin" ? (
-              <Button onClick={openCreate}>
-                <Plus className="h-4 w-4" />
-                Nova campanha
+            <>
+              <Button
+                variant="outline"
+                onClick={() => void refreshCampaigns()}
+                disabled={campaignsQuery.isFetching || placementsQuery.isFetching}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${campaignsQuery.isFetching || placementsQuery.isFetching ? "animate-spin" : ""}`}
+                />
+                Atualizar
               </Button>
-            ) : undefined
+              {user?.role === "admin" && (
+                <Button onClick={openCreate}>
+                  <Plus className="h-4 w-4" />
+                  Nova campanha
+                </Button>
+              )}
+            </>
           }
         />
 

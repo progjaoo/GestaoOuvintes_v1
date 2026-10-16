@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "RUN_INTEGRATION_TESTS=true vitest run tests/integration",
+    "test:compat:legacy": "sh ./scripts/test-legacy-compat.sh",
     "participants:backfill": "tsx scripts/backfill-campaign-participations.ts"
   },
   "dependencies": {

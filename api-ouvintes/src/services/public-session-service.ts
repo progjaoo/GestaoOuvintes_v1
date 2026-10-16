@@ -179,19 +179,20 @@ export async function resolvePublicSession(input: {
   deviceToken: string;
 }) {
   const placement = await getPublicPlacementCampaign(input.placement);
-  const device = await resolveDevice(input.deviceToken, input.platform);
 
   if (!placement.campaign) {
     return {
       placement: input.placement,
       placementVersion: placement.version,
       campaign: null,
-      listenerState: device.listenerProfileId ? "known" : "anonymous",
+      listenerState: "anonymous" as const,
       experience: "campaign_unavailable",
       participation: null,
       dismissedUntil: null,
     };
   }
+
+  const device = await resolveDevice(input.deviceToken, input.platform);
 
   const now = new Date();
   const campaignId = placement.campaign.id;

@@ -18,6 +18,7 @@ const booleanFromString = z
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
   HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().int().positive().default(3010),
   DATABASE_URL: z.string().url(),
@@ -51,6 +52,10 @@ const envSchema = z.object({
   R2_PUBLIC_BASE_URL: optionalUrl,
   R2_OBJECT_PREFIX: z.string().default("banners-institucional"),
   INSTITUTIONAL_BANNER_MAX_BYTES: z.coerce.number().int().positive().default(10_485_760),
+  PUBLIC_CONFIG_READ_MODE: z.enum(["database", "r2"]).default("database"),
+  PUBLIC_CONFIG_SNAPSHOT_WRITE_ENABLED: booleanFromString,
+  PUBLIC_CONFIG_NAMESPACE: optionalNonEmptyString,
+  PUBLIC_CONFIG_R2_TIMEOUT_MS: z.coerce.number().int().min(500).max(10_000).default(4_000),
 });
 
 const result = envSchema.safeParse(process.env);
@@ -72,8 +77,50 @@ if (
   );
 }
 
+const publicConfigEnabled =
+  result.data.PUBLIC_CONFIG_READ_MODE === "r2" ||
+  result.data.PUBLIC_CONFIG_SNAPSHOT_WRITE_ENABLED;
+if (
+  result.data.PUBLIC_CONFIG_READ_MODE === "r2" &&
+  !result.data.PUBLIC_CONFIG_SNAPSHOT_WRITE_ENABLED
+) {
+  throw new Error(
+    "PUBLIC_CONFIG_READ_MODE=r2 exige PUBLIC_CONFIG_SNAPSHOT_WRITE_ENABLED=true para manter o snapshot sincronizado.",
+  );
+}
+
+if (publicConfigEnabled) {
+  const namespace = result.data.PUBLIC_CONFIG_NAMESPACE;
+  if (!namespace || !/^(development|test|preview|production)\/radio-88$/.test(namespace)) {
+    throw new Error(
+      "PUBLIC_CONFIG_NAMESPACE deve identificar explicitamente o ambiente e radio-88.",
+    );
+  }
+
+  const expectedPrefix = result.data.VERCEL_ENV;
+  if (expectedPrefix && !namespace.startsWith(`${expectedPrefix}/`)) {
+    throw new Error("PUBLIC_CONFIG_NAMESPACE nao corresponde ao ambiente Vercel.");
+  }
+  if (namespace.startsWith("production/") && expectedPrefix !== "production") {
+    throw new Error("O namespace de producao exige VERCEL_ENV=production.");
+  }
+
+  if (
+    !result.data.R2_ACCOUNT_ID ||
+    !result.data.R2_ACCESS_KEY_ID ||
+    !result.data.R2_SECRET_ACCESS_KEY ||
+    !result.data.R2_BUCKET_NAME ||
+    !result.data.R2_PUBLIC_BASE_URL
+  ) {
+    throw new Error(
+      "A leitura/publicacao da configuracao publica exige credenciais R2 e URL publica.",
+    );
+  }
+}
+
 export const env = {
   ...result.data,
+  PUBLIC_CONFIG_NAMESPACE: result.data.PUBLIC_CONFIG_NAMESPACE ?? "",
   DEVICE_TOKEN_SECRET: result.data.DEVICE_TOKEN_SECRET ?? result.data.JWT_SECRET,
   corsAllowedOrigins: result.data.CORS_ALLOWED_ORIGINS.split(",")
     .map((origin) => origin.trim())

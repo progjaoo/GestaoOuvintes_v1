@@ -20,6 +20,7 @@ Tipo: WEB/API.
 - [Deploy e operacao](deployment-operations.md)
 - [Plano de publicacao Vercel/Neon](plans/plano-publicacao.md)
 - [Cloudflare R2 para banners institucionais](cloudflare-r2-banners.md)
+- [Snapshot de configuração pública em R2](../api-ouvintes/docs/public-config-snapshot.md)
 - [Guidelines de contribuicao](contribution-guidelines.md)
 - [Mobile First](mobile-first.md)
 

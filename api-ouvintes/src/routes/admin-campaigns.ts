@@ -15,6 +15,7 @@ import {
   publishCampaignToPlacement,
   updateCampaign,
 } from "../services/campaign-service.js";
+import { syncPublicConfigAfterMutation } from "../services/public-config-sync.js";
 
 export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", requireAuthentication);
@@ -53,6 +54,7 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const input = createCampaignSchema.parse(request.body);
       const campaign = await createCampaign(input);
+      await syncPublicConfigAfterMutation(request, reply);
       return reply.code(201).send(campaign);
     },
   );
@@ -62,10 +64,12 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
     {
       preHandler: requireAdminRole,
     },
-    async (request) => {
+    async (request, reply) => {
       const { id } = campaignIdParamsSchema.parse(request.params);
       const input = updateCampaignSchema.parse(request.body);
-      return updateCampaign(id, input);
+      const campaign = await updateCampaign(id, input);
+      await syncPublicConfigAfterMutation(request, reply);
+      return campaign;
     },
   );
 
@@ -74,14 +78,16 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
     {
       preHandler: requireAdminRole,
     },
-    async (request) => {
+    async (request, reply) => {
       const { id } = campaignIdParamsSchema.parse(request.params);
       const input = publishCampaignSchema.parse(request.body);
-      return publishCampaignToPlacement({
+      const placement = await publishCampaignToPlacement({
         campaignId: id,
         placementKey: input.placementKey,
         adminUserId: request.user.sub,
       });
+      await syncPublicConfigAfterMutation(request, reply);
+      return placement;
     },
   );
 };

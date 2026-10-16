@@ -56,11 +56,36 @@ describeIntegration("API integrada com PostgreSQL", () => {
     });
 
     expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toContain("s-maxage=60");
     expect(response.json()).toMatchObject({
       slug: "lancamento-institucional-2026",
       active: true,
       privacyNoticeVersion: "2026-08-01",
     });
+  });
+
+  it("define cache compartilhado curto para configuracao e banners publicos", async () => {
+    const placement = await app!.inject({
+      method: "GET",
+      url: "/api/public/placements/institutional_modal/campaign",
+    });
+    const banners = await app!.inject({
+      method: "GET",
+      url: "/api/public/institutional-banners?placement=home_hero",
+    });
+
+    expect(placement.headers["cache-control"]).toContain("s-maxage=60");
+    expect(placement.headers.vary).toContain("Origin");
+    expect(banners.headers["cache-control"]).toContain("s-maxage=60");
+    expect(banners.headers.etag).toBeTruthy();
+    expect(banners.headers.vary).toContain("Origin");
+
+    const unchanged = await app!.inject({
+      method: "GET",
+      url: "/api/public/institutional-banners?placement=home_hero",
+      headers: { "if-none-match": banners.headers.etag as string },
+    });
+    expect(unchanged.statusCode).toBe(304);
   });
 
   it("cria cadastro com telefone obrigatorio e impede duplicacao por idempotencia", async () => {

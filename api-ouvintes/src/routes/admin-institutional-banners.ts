@@ -24,6 +24,7 @@ import {
   createMediaStorage,
   getMediaStorageStatus,
 } from "../services/media-storage/r2-media-storage.js";
+import { syncPublicConfigAfterMutation } from "../services/public-config-sync.js";
 
 export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", requireAuthentication);
@@ -92,43 +93,53 @@ export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) =>
   app.put("/reorder", { preHandler: canManage }, async (request, reply) => {
     const input = reorderInstitutionalBannersSchema.parse(request.body);
     await reorderInstitutionalBanners(input.placementKey, input.orderedIds, request.user.sub);
+    await syncPublicConfigAfterMutation(request, reply);
     return reply.code(204).send();
   });
 
   app.post("/r2-object", { preHandler: canManage }, async (request, reply) => {
     const input = createInstitutionalBannerFromR2ObjectSchema.parse(request.body);
-    return reply
-      .code(201)
-      .send(await createInstitutionalBannerFromR2Object(input, request.user.sub));
+    const banner = await createInstitutionalBannerFromR2Object(input, request.user.sub);
+    await syncPublicConfigAfterMutation(request, reply);
+    return reply.code(201).send(banner);
   });
 
   app.post("/", { preHandler: canManage }, async (request, reply) => {
     const input = createInstitutionalBannerSchema.parse(request.body);
-    return reply.code(201).send(await createInstitutionalBanner(input, request.user.sub));
+    const banner = await createInstitutionalBanner(input, request.user.sub);
+    await syncPublicConfigAfterMutation(request, reply);
+    return reply.code(201).send(banner);
   });
 
-  app.put("/:id", { preHandler: canManage }, async (request) => {
+  app.put("/:id", { preHandler: canManage }, async (request, reply) => {
     const { id } = bannerIdParamsSchema.parse(request.params);
-    return updateInstitutionalBanner(
+    const banner = await updateInstitutionalBanner(
       id,
       updateInstitutionalBannerSchema.parse(request.body),
       request.user.sub,
     );
+    await syncPublicConfigAfterMutation(request, reply);
+    return banner;
   });
 
-  app.post("/:id/activate", { preHandler: canManage }, async (request) => {
+  app.post("/:id/activate", { preHandler: canManage }, async (request, reply) => {
     const { id } = bannerIdParamsSchema.parse(request.params);
-    return setInstitutionalBannerActive(id, true, request.user.sub);
+    const banner = await setInstitutionalBannerActive(id, true, request.user.sub);
+    await syncPublicConfigAfterMutation(request, reply);
+    return banner;
   });
 
-  app.post("/:id/deactivate", { preHandler: canManage }, async (request) => {
+  app.post("/:id/deactivate", { preHandler: canManage }, async (request, reply) => {
     const { id } = bannerIdParamsSchema.parse(request.params);
-    return setInstitutionalBannerActive(id, false, request.user.sub);
+    const banner = await setInstitutionalBannerActive(id, false, request.user.sub);
+    await syncPublicConfigAfterMutation(request, reply);
+    return banner;
   });
 
   app.delete("/:id", { preHandler: canManage }, async (request, reply) => {
     const { id } = bannerIdParamsSchema.parse(request.params);
     await deleteInstitutionalBanner(id, request.user.sub);
+    await syncPublicConfigAfterMutation(request, reply);
     return reply.code(204).send();
   });
 };

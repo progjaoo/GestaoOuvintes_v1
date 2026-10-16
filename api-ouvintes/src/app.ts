@@ -15,6 +15,7 @@ import { adminInstitutionalBannerRoutes } from "./routes/admin-institutional-ban
 import { healthRoutes } from "./routes/health.js";
 import { publicRoutes } from "./routes/public.js";
 import { publicInstitutionalBannerRoutes } from "./routes/public-institutional-banners.js";
+import { adminPublicConfigRoutes } from "./routes/admin-public-config.js";
 
 function isDevelopmentLocalOrigin(origin: string) {
   if (env.NODE_ENV !== "development") return false;
@@ -178,6 +179,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       "X-Platform",
       "Idempotency-Key",
     ],
+    exposedHeaders: ["X-Public-Config-Sync", "X-Public-Config-Revision"],
   });
 
   await app.register(multipart, {
@@ -214,6 +216,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminInstitutionalBannerRoutes, {
     prefix: "/api/admin/institutional-banners",
   });
+  await app.register(adminPublicConfigRoutes, { prefix: "/api/admin/public-config" });
 
   return app;
 }

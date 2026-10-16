@@ -77,8 +77,6 @@ export function RegistrationsPage() {
     queryKey: ["registrations", apiFilters],
     queryFn: () => api.listRegistrations(apiFilters),
     placeholderData: (previous) => previous,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
   const totalQuery = useQuery({
@@ -126,6 +124,22 @@ export function RegistrationsPage() {
     setPage(1);
   };
 
+  const refreshing = [
+    campaignsQuery,
+    registrationsQuery,
+    totalQuery,
+    withPhoneQuery,
+  ].some((query) => query.isFetching);
+
+  const refreshData = async () => {
+    await Promise.all([
+      campaignsQuery.refetch(),
+      registrationsQuery.refetch(),
+      totalQuery.refetch(),
+      withPhoneQuery.refetch(),
+    ]);
+  };
+
   const handleExport = async (format: "csv" | "xlsx") => {
     setExporting(format);
     try {
@@ -163,11 +177,11 @@ export function RegistrationsPage() {
             <>
               <Button
                 variant="outline"
-                onClick={() => registrationsQuery.refetch()}
-                disabled={registrationsQuery.isFetching}
+                onClick={() => void refreshData()}
+                disabled={refreshing}
               >
                 <RefreshCw
-                  className={`h-4 w-4 ${registrationsQuery.isFetching ? "animate-spin" : ""}`}
+                  className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
                 />
                 Atualizar
               </Button>

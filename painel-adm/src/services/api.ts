@@ -24,6 +24,40 @@ const API_URL = (import.meta.env.VITE_CADASTROS_API_URL ?? "http://127.0.0.1:301
   .replace(/\/+$/, "");
 
 export const UNAUTHORIZED_EVENT = "radio88-admin:unauthorized";
+export const PUBLIC_CONFIG_SYNC_EVENT = "radio88-admin:public-config-sync";
+export const PUBLIC_CONFIG_SYNC_STORAGE_KEY = "radio88-admin:public-config-sync-pending";
+let publicConfigSyncPending: boolean | null = null;
+
+export function getPublicConfigSyncPending(): boolean | null {
+  return publicConfigSyncPending;
+}
+
+function capturePublicConfigSync(response: Response) {
+  const status = response.headers.get("x-public-config-sync");
+  if (!status || typeof window === "undefined") return;
+
+  const state =
+    status === "pending"
+      ? { pending: true, revision: response.headers.get("x-public-config-revision") }
+      : status === "published" || status === "disabled"
+        ? { pending: false, revision: null }
+        : null;
+  if (!state) return;
+
+  publicConfigSyncPending = state.pending;
+
+  try {
+    if (state.pending) {
+      window.localStorage.setItem(PUBLIC_CONFIG_SYNC_STORAGE_KEY, JSON.stringify(state));
+    } else {
+      window.localStorage.removeItem(PUBLIC_CONFIG_SYNC_STORAGE_KEY);
+    }
+  } catch {
+    // The in-memory state and event still notify the active panel when storage is blocked.
+  }
+
+  window.dispatchEvent(new CustomEvent(PUBLIC_CONFIG_SYNC_EVENT, { detail: state }));
+}
 
 export class ApiError extends Error {
   constructor(
@@ -70,6 +104,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       "Não foi possível conectar à API de cadastros.",
     );
   }
+
+  capturePublicConfigSync(response);
 
   if (response.status === 401 && options.authenticated !== false) {
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
@@ -142,6 +178,13 @@ async function download(path: string, fallbackName: string): Promise<void> {
 }
 
 export const api = {
+  republishPublicConfig() {
+    return request<{ syncStatus: "published" | "pending" | "disabled"; revision: string | null }>(
+      "/api/admin/public-config/republish",
+      { method: "POST" },
+    );
+  },
+
   getBootstrapStatus() {
     return request<BootstrapStatusResponse>("/api/admin/auth/bootstrap-status", {
       authenticated: false,

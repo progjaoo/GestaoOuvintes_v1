@@ -19,17 +19,43 @@ import {
   updateCampaignDeviceState,
 } from "../services/public-session-service.js";
 import { addCampaignEventClient } from "../services/campaign-events.js";
+import {
+  getSnapshotCampaign,
+  getSnapshotPlacement,
+  isPublicConfigSnapshotReadEnabled,
+  publicConfigCacheControl,
+  readPublicConfigSnapshot,
+} from "../services/public-config-snapshot.js";
+
+const PUBLIC_CONFIG_CACHE_CONTROL =
+  "public, max-age=0, s-maxage=60, stale-while-revalidate=60";
 
 export const publicRoutes: FastifyPluginAsync = async (app) => {
-  app.get("/campaigns/:slug", async (request) => {
+  app.get("/campaigns/:slug", async (request, reply) => {
     const { slug } = campaignSlugParamsSchema.parse(request.params);
+    reply.header("Vary", "Origin");
+    if (isPublicConfigSnapshotReadEnabled()) {
+      const snapshot = await readPublicConfigSnapshot();
+      const campaign = snapshot.campaigns.find((item) => item.slug === slug);
+      reply.header("Cache-Control", publicConfigCacheControl(snapshot, campaign));
+      return getSnapshotCampaign(snapshot, slug);
+    }
+    reply.header("Cache-Control", PUBLIC_CONFIG_CACHE_CONTROL);
     return getPublicCampaign(slug);
   });
 
   app.get("/placements/:placementKey/campaign", async (request, reply) => {
     const { placementKey } = placementParamsSchema.parse(request.params);
 
-    reply.header("Cache-Control", "no-store, max-age=0");
+    reply.header("Vary", "Origin");
+    if (isPublicConfigSnapshotReadEnabled()) {
+      const snapshot = await readPublicConfigSnapshot();
+      const result = getSnapshotPlacement(snapshot, placementKey);
+      reply.header("Cache-Control", publicConfigCacheControl(snapshot, result.sourceCampaign));
+      const { sourceCampaign: _sourceCampaign, ...response } = result;
+      return response;
+    }
+    reply.header("Cache-Control", PUBLIC_CONFIG_CACHE_CONTROL);
     return getPublicPlacementCampaign(placementKey);
   });
 
@@ -37,6 +63,21 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     const input = resolvePublicSessionSchema.parse(request.body);
     const deviceToken = requireDeviceToken(request.headers["x-device-token"]);
     reply.header("Cache-Control", "no-store, max-age=0");
+    if (isPublicConfigSnapshotReadEnabled()) {
+      const snapshot = await readPublicConfigSnapshot();
+      const placement = getSnapshotPlacement(snapshot, input.placement);
+      if (!placement.campaign) {
+        return {
+          placement: input.placement,
+          placementVersion: placement.version,
+          campaign: null,
+          listenerState: "anonymous" as const,
+          experience: "campaign_unavailable",
+          participation: null,
+          dismissedUntil: null,
+        };
+      }
+    }
     return resolvePublicSession({ ...input, deviceToken });
   });
 
