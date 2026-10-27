@@ -281,7 +281,7 @@ export const api = {
   },
 
   listInstitutionalBanners() {
-    return request<{ items: InstitutionalBanner[] }>(
+    return request<{ items: InstitutionalBanner[]; capabilities?: { primaryBanner: boolean } }>(
       "/api/admin/institutional-banners?placement=home_hero",
     );
   },

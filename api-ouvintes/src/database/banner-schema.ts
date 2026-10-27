@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  check,
   index,
   jsonb,
   integer,
@@ -10,6 +11,7 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { adminUsers } from "./schema.js";
 
 export const mediaAssets = pgTable(
@@ -53,6 +55,7 @@ export const institutionalBanners = pgTable(
     openInNewTab: boolean("open_in_new_tab").notNull().default(false),
     displayOrder: integer("display_order").notNull(),
     active: boolean("active").notNull().default(false),
+    isPrimary: boolean("is_primary").notNull().default(false),
     createdByAdminUserId: uuid("created_by_admin_user_id").references(
       () => adminUsers.id,
       { onDelete: "set null" },
@@ -66,6 +69,9 @@ export const institutionalBanners = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    uniqueIndex("institutional_banner_one_primary_per_placement_idx")
+      .on(table.placementKey).where(sql`${table.isPrimary} AND ${table.deletedAt} IS NULL`),
+    check("institutional_banner_primary_state_check", sql`NOT ${table.isPrimary} OR (${table.active} AND ${table.deletedAt} IS NULL AND ${table.placementKey} = 'home_hero')`),
     index("institutional_banner_public_idx").on(
       table.placementKey,
       table.active,

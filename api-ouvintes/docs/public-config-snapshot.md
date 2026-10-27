@@ -57,7 +57,28 @@ em produção até publicar e comparar um snapshot inicial válido.
 - O cache em memória da função dura no máximo 15 segundos. O objeto R2 é lido
   diretamente pelo backend; não se presume cache/invalidação de domínio CDN.
 
-## Rollback
+## Banner principal (Plan 050)
+
+A migration `0013_institutional_banner_primary.sql` adiciona o estado editorial.
+O leitor aceita `isPrimary` opcional nos banners de `schemaVersion: 1`, sem
+preencher valores antes da verificacao SHA-256. Snapshots legados continuam
+validos. `INSTITUTIONAL_PRIMARY_BANNER_ENABLED=false` e o padrao: o escritor
+omite o campo e a API publica nao expoe destaque ativo.
+
+Para habilitar: aplicar somente a migration nova sobre o schema legado,
+publicar primeiro o leitor preparado com a flag falsa, validar o snapshot
+atual e os clientes, depois ativar a flag e republicar a configuracao publica.
+O painel usa `capabilities.primaryBanner` da listagem administrativa para
+habilitar o controle. A publicacao ou edicao ocorre pelas rotas existentes,
+com a mesma permissao `institutional_banner.manage`.
+
+Para restaurar o branco, desmarcar o principal. Para voltar a uma API anterior
+ao Plan 050, usar primeiro o leitor preparado com a flag falsa e republicar
+um snapshot sem o campo novo; so depois retornar ao leitor antigo. Um leitor
+antigo pode rejeitar o hash do payload novo. Nao alterar o modo R2 para
+reverter apenas essa funcionalidade.
+
+## Rollback completo do mecanismo de snapshot
 
 Primeiro desligue `PUBLIC_CONFIG_READ_MODE` para `database` e publique a API;
 depois, quando apropriado, desligue `PUBLIC_CONFIG_SNAPSHOT_WRITE_ENABLED`. A

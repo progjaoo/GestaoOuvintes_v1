@@ -34,7 +34,10 @@ export const adminInstitutionalBannerRoutes: FastifyPluginAsync = async (app) =>
 
   app.get("/", { preHandler: canRead }, async (request) => {
     const { placement } = publicBannerQuerySchema.parse(request.query);
-    return { items: await listAdminInstitutionalBanners(placement) };
+    return {
+      items: await listAdminInstitutionalBanners(placement),
+      capabilities: { primaryBanner: env.INSTITUTIONAL_PRIMARY_BANNER_ENABLED },
+    };
   });
 
   app.get("/storage/check", { preHandler: canUpload }, async () => ({

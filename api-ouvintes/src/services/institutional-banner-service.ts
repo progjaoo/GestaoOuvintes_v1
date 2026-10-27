@@ -33,6 +33,56 @@ const EXISTING_OBJECT_MIME_TYPES: Record<string, string> = {
   webp: "image/webp",
 };
 
+type BannerTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function lockBannerConfiguration(tx: BannerTransaction) {
+  // One transaction lock also covers moves between placements and concurrent deletes.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('institutional_banner:configuration'))`);
+}
+
+function validatePrimaryChoice(isPrimary: boolean | undefined, active: boolean, placement: string) {
+  if (!isPrimary) return;
+  if (!env.INSTITUTIONAL_PRIMARY_BANNER_ENABLED) {
+    throw new AppError(409, "PRIMARY_BANNER_DISABLED", "O banner principal ainda nao esta habilitado neste ambiente.");
+  }
+  if (!active || placement !== "home_hero") {
+    throw new AppError(422, "INVALID_PRIMARY_BANNER", "O banner principal deve estar publicado no carrossel da pagina inicial.");
+  }
+}
+
+async function clearPreviousPrimary(tx: BannerTransaction, adminUserId: string, keepId?: string) {
+  const [previous] = await tx.select({ id: institutionalBanners.id }).from(institutionalBanners)
+    .where(and(eq(institutionalBanners.isPrimary, true), isNull(institutionalBanners.deletedAt)))
+    .limit(1);
+  if (previous && previous.id !== keepId) {
+    await tx.update(institutionalBanners)
+      .set({ isPrimary: false, updatedByAdminUserId: adminUserId, updatedAt: new Date() })
+      .where(eq(institutionalBanners.id, previous.id));
+  }
+  return previous?.id ?? null;
+}
+
+async function auditPrimaryChange(tx: BannerTransaction, adminUserId: string, before: string | null, after: string | null) {
+  if (before === after) return;
+  await audit(tx, {
+    adminUserId,
+    action: "primary.change",
+    resourceType: "institutional_banner",
+    resourceId: after ?? before ?? undefined,
+    metadata: { previousBannerId: before, primaryBannerId: after },
+  });
+}
+
+async function orphanUnusedAsset(tx: BannerTransaction, assetId: string) {
+  const [reference] = await tx.select({ id: institutionalBanners.id }).from(institutionalBanners)
+    .where(and(eq(institutionalBanners.mediaAssetId, assetId), isNull(institutionalBanners.deletedAt)))
+    .limit(1);
+  if (!reference) {
+    await tx.update(mediaAssets).set({ status: "orphaned", updatedAt: new Date() })
+      .where(eq(mediaAssets.id, assetId));
+  }
+}
+
 function publicUrl(key: string): string | null {
   if (!env.R2_PUBLIC_BASE_URL) return null;
   return env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "") + "/" +
@@ -102,6 +152,7 @@ const bannerSelection = {
   openInNewTab: institutionalBanners.openInNewTab,
   displayOrder: institutionalBanners.displayOrder,
   active: institutionalBanners.active,
+  isPrimary: institutionalBanners.isPrimary,
   createdAt: institutionalBanners.createdAt,
   updatedAt: institutionalBanners.updatedAt,
   objectKey: mediaAssets.objectKey,
@@ -168,6 +219,7 @@ export async function listPublicInstitutionalBanners(placementKey: string) {
       destinationUrl: row.destinationUrl,
       openInNewTab: row.openInNewTab,
       order: row.displayOrder,
+      isPrimary: env.INSTITUTIONAL_PRIMARY_BANNER_ENABLED && row.isPrimary,
     })),
   };
 }
@@ -182,6 +234,7 @@ export async function createInstitutionalBannerFromR2Object(
     destinationUrl: string | null;
     openInNewTab: boolean;
     active: boolean;
+    isPrimary?: boolean;
   },
   adminUserId: string,
 ) {
@@ -191,11 +244,10 @@ export async function createInstitutionalBannerFromR2Object(
 
   const object = normalizeExistingObjectKey(input.objectKey);
   const action = institutionalBannerActionStateSchema.parse(input);
+  validatePrimaryChoice(input.isPrimary, input.active, input.placementKey);
 
   return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${"institutional_banner:" + input.placementKey}))`,
-    );
+    await lockBannerConfiguration(tx);
 
     const [existingAsset] = await tx.select().from(mediaAssets)
       .where(eq(mediaAssets.objectKey, object.key)).limit(1);
@@ -225,6 +277,7 @@ export async function createInstitutionalBannerFromR2Object(
       ))
       .orderBy(desc(institutionalBanners.displayOrder)).limit(1);
 
+    const previousPrimaryId = input.isPrimary ? await clearPreviousPrimary(tx, adminUserId) : null;
     const [created] = await tx.insert(institutionalBanners).values({
       title: input.title,
       altText: input.altText,
@@ -234,12 +287,14 @@ export async function createInstitutionalBannerFromR2Object(
       destinationUrl: action.destinationUrl,
       openInNewTab: action.openInNewTab,
       active: input.active,
+      isPrimary: input.isPrimary ?? false,
       displayOrder: (last?.displayOrder ?? 0) + 1,
       createdByAdminUserId: adminUserId,
       updatedByAdminUserId: adminUserId,
     }).returning();
 
     if (!created) throw new AppError(500, "BANNER_CREATE_FAILED", "Falha ao criar o banner.");
+    if (input.isPrimary) await auditPrimaryChange(tx, adminUserId, previousPrimaryId, created.id);
 
     await audit(tx, {
       adminUserId,
@@ -318,15 +373,15 @@ export async function createInstitutionalBanner(
     destinationUrl: string | null;
     openInNewTab: boolean;
     active: boolean;
+    isPrimary?: boolean;
   },
   adminUserId: string,
 ) {
   const action = institutionalBannerActionStateSchema.parse(input);
+  validatePrimaryChoice(input.isPrimary, input.active, input.placementKey);
 
   return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${"institutional_banner:" + input.placementKey}))`,
-    );
+    await lockBannerConfiguration(tx);
 
     const [asset] = await tx.select({ id: mediaAssets.id, status: mediaAssets.status })
       .from(mediaAssets).where(eq(mediaAssets.id, input.mediaAssetId)).limit(1);
@@ -342,8 +397,10 @@ export async function createInstitutionalBanner(
       ))
       .orderBy(desc(institutionalBanners.displayOrder)).limit(1);
 
+    const previousPrimaryId = input.isPrimary ? await clearPreviousPrimary(tx, adminUserId) : null;
     const [created] = await tx.insert(institutionalBanners).values({
       ...input,
+      isPrimary: input.isPrimary ?? false,
       actionType: action.actionType,
       destinationUrl: action.destinationUrl,
       openInNewTab: action.openInNewTab,
@@ -352,6 +409,7 @@ export async function createInstitutionalBanner(
       updatedByAdminUserId: adminUserId,
     }).returning();
     if (!created) throw new AppError(500, "BANNER_CREATE_FAILED", "Falha ao criar o banner.");
+    if (input.isPrimary) await auditPrimaryChange(tx, adminUserId, previousPrimaryId, created.id);
 
     await audit(tx, {
       adminUserId,
@@ -374,14 +432,23 @@ export async function updateInstitutionalBanner(
     destinationUrl: string | null;
     openInNewTab: boolean;
     active: boolean;
+    isPrimary: boolean;
   }>,
   adminUserId: string,
+  auditAction = "update",
 ) {
   return db.transaction(async (tx) => {
+    await lockBannerConfiguration(tx);
     const [existing] = await tx.select().from(institutionalBanners)
       .where(and(eq(institutionalBanners.id, id), isNull(institutionalBanners.deletedAt)))
       .limit(1);
     if (!existing) throw new AppError(404, "BANNER_NOT_FOUND", "Banner nao encontrado.");
+
+    const nextActive = input.active ?? existing.active;
+    const nextPlacement = input.placementKey ?? existing.placementKey;
+    validatePrimaryChoice(input.isPrimary, nextActive, nextPlacement);
+    const nextPrimary = nextActive && nextPlacement === "home_hero" &&
+      (input.isPrimary ?? existing.isPrimary);
 
     const action = institutionalBannerActionStateSchema.parse({
       actionType: input.actionType ?? existing.actionType,
@@ -395,17 +462,22 @@ export async function updateInstitutionalBanner(
           : existing.openInNewTab,
     });
 
-    if (input.mediaAssetId) {
+    if (input.mediaAssetId || nextPrimary) {
       const [asset] = await tx.select({ status: mediaAssets.status }).from(mediaAssets)
-        .where(eq(mediaAssets.id, input.mediaAssetId)).limit(1);
+        .where(eq(mediaAssets.id, input.mediaAssetId ?? existing.mediaAssetId)).limit(1);
       if (!asset || asset.status !== "ready") {
         throw new AppError(422, "MEDIA_NOT_READY", "Selecione uma imagem pronta para uso.");
       }
     }
 
+    const previousPrimaryId = nextPrimary
+      ? await clearPreviousPrimary(tx, adminUserId, id)
+      : existing.isPrimary ? id : null;
+
     const [updated] = await tx.update(institutionalBanners)
       .set({
         ...input,
+        isPrimary: nextPrimary,
         actionType: action.actionType,
         destinationUrl: action.destinationUrl,
         openInNewTab: action.openInNewTab,
@@ -415,13 +487,16 @@ export async function updateInstitutionalBanner(
       .where(eq(institutionalBanners.id, id)).returning();
 
     if (input.mediaAssetId && input.mediaAssetId !== existing.mediaAssetId) {
-      await tx.update(mediaAssets).set({ status: "orphaned", updatedAt: new Date() })
-        .where(eq(mediaAssets.id, existing.mediaAssetId));
+      await orphanUnusedAsset(tx, existing.mediaAssetId);
+    }
+
+    if (nextPrimary || existing.isPrimary) {
+      await auditPrimaryChange(tx, adminUserId, previousPrimaryId, nextPrimary ? id : null);
     }
 
     await audit(tx, {
       adminUserId,
-      action: "update",
+      action: auditAction,
       resourceType: "institutional_banner",
       resourceId: id,
     });
@@ -434,18 +509,7 @@ export async function setInstitutionalBannerActive(
   active: boolean,
   adminUserId: string,
 ) {
-  const [updated] = await db.update(institutionalBanners)
-    .set({ active, updatedByAdminUserId: adminUserId, updatedAt: new Date() })
-    .where(and(eq(institutionalBanners.id, id), isNull(institutionalBanners.deletedAt)))
-    .returning();
-  if (!updated) throw new AppError(404, "BANNER_NOT_FOUND", "Banner nao encontrado.");
-  await audit(db, {
-    adminUserId,
-    action: active ? "activate" : "deactivate",
-    resourceType: "institutional_banner",
-    resourceId: id,
-  });
-  return updated;
+  return updateInstitutionalBanner(id, { active }, adminUserId, active ? "activate" : "deactivate");
 }
 
 export async function reorderInstitutionalBanners(
@@ -454,6 +518,7 @@ export async function reorderInstitutionalBanners(
   adminUserId: string,
 ) {
   return db.transaction(async (tx) => {
+    await lockBannerConfiguration(tx);
     const current = await tx.select({ id: institutionalBanners.id })
       .from(institutionalBanners)
       .where(and(
@@ -487,6 +552,7 @@ export async function reorderInstitutionalBanners(
 
 export async function deleteInstitutionalBanner(id: string, adminUserId: string) {
   await db.transaction(async (tx) => {
+    await lockBannerConfiguration(tx);
     const [banner] = await tx.select().from(institutionalBanners)
       .where(and(eq(institutionalBanners.id, id), isNull(institutionalBanners.deletedAt)))
       .limit(1);
@@ -494,12 +560,13 @@ export async function deleteInstitutionalBanner(id: string, adminUserId: string)
 
     await tx.update(institutionalBanners).set({
       active: false,
+      isPrimary: false,
       deletedAt: new Date(),
       updatedByAdminUserId: adminUserId,
       updatedAt: new Date(),
     }).where(eq(institutionalBanners.id, id));
-    await tx.update(mediaAssets).set({ status: "orphaned", updatedAt: new Date() })
-      .where(eq(mediaAssets.id, banner.mediaAssetId));
+    await orphanUnusedAsset(tx, banner.mediaAssetId);
+    if (banner.isPrimary) await auditPrimaryChange(tx, adminUserId, id, null);
     await audit(tx, {
       adminUserId,
       action: "delete",

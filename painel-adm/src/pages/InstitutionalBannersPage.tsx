@@ -78,6 +78,8 @@ export function InstitutionalBannersPage() {
     queryFn: api.listInstitutionalBanners,
   });
   const items = useMemo(() => bannersQuery.data?.items ?? [], [bannersQuery.data]);
+  const primaryEnabled = bannersQuery.data?.capabilities?.primaryBanner === true;
+  const currentPrimary = items.find((banner) => banner.isPrimary && banner.active);
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["institutional-banners"] });
@@ -131,7 +133,7 @@ export function InstitutionalBannersPage() {
         <PageHeader
           eyebrow="Site institucional"
           title="Banners institucionais"
-          description="Gerencie as imagens promocionais do Hero. O banner branco da Rádio 88 FM permanece fixo e não pode ser removido."
+          description="Gerencie as imagens do carrossel e escolha um destaque temporário para a abertura do site."
           actions={
             <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
               <Plus className="h-4 w-4" />
@@ -143,7 +145,12 @@ export function InstitutionalBannersPage() {
         <div className="rounded-xl border border-genesis-border bg-indigo-50 p-4 text-sm text-genesis-muted">
           As imagens são otimizadas pela API e armazenadas no Cloudflare R2. Formatos aceitos: JPEG, PNG, WebP e AVIF, até 10 MiB.
         </div>
-
+        {bannersQuery.isSuccess && (
+          <p className="text-sm text-genesis-muted" role="status">
+            Abertura atual: <strong className="text-genesis-text">{primaryEnabled && currentPrimary ? currentPrimary.title : "banner branco institucional"}</strong>.
+            {primaryEnabled ? " O destaque abre primeiro; os demais seguem a ordem da lista." : " A seleção de banner principal ainda não está habilitada neste ambiente."}
+          </p>
+        )}
 
         {bannersQuery.isLoading ? (
           <LoadingBlock />
@@ -155,7 +162,7 @@ export function InstitutionalBannersPage() {
           <EmptyState
             icon={ImagePlus}
             title="Nenhum banner promocional"
-            description="Adicione o primeiro banner. O slide branco continuará sendo o primeiro do carrossel."
+            description="Adicione um banner e publique-o para exibir no site. Sem destaque selecionado, o branco abre o carrossel."
           />
         ) : (
           <section className="space-y-3" aria-label="Ordem dos banners">
@@ -190,6 +197,7 @@ export function InstitutionalBannersPage() {
                     <Badge tone={banner.active ? "green" : "gray"}>
                       {banner.active ? "Ativo" : "Inativo"}
                     </Badge>
+                    {primaryEnabled && banner.isPrimary && <Badge tone="blue">Principal</Badge>}
                     <Badge tone="blue">
                       {institutionalBannerActionLabels[
                         resolveInstitutionalBannerActionType(
@@ -272,6 +280,8 @@ export function InstitutionalBannersPage() {
         <BannerDialog
           open
           banner={editing}
+          primaryEnabled={primaryEnabled}
+          currentPrimary={currentPrimary}
           onOpenChange={(open) => {
             setDialogOpen(open);
             if (!open) setEditing(null);
@@ -290,11 +300,15 @@ export function InstitutionalBannersPage() {
 function BannerDialog({
   open,
   banner,
+  primaryEnabled,
+  currentPrimary,
   onOpenChange,
   onSaved,
 }: {
   open: boolean;
   banner: InstitutionalBanner | null;
+  primaryEnabled: boolean;
+  currentPrimary?: InstitutionalBanner;
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
 }) {
@@ -310,6 +324,8 @@ function BannerDialog({
   const [destinationUrl, setDestinationUrl] = useState(banner?.destinationUrl ?? "");
   const [openInNewTab, setOpenInNewTab] = useState(banner?.openInNewTab ?? false);
   const [active, setActive] = useState(banner?.active ?? false);
+  const [isPrimary, setIsPrimary] = useState(banner?.isPrimary ?? false);
+  const [primaryChanged, setPrimaryChanged] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
   const saveMutation = useMutation({
@@ -330,6 +346,7 @@ function BannerDialog({
         placementKey: "home_hero",
         ...action,
         active,
+        ...(primaryChanged ? { isPrimary: active && isPrimary } : {}),
       };
 
       if (!mediaAssetId) throw new Error("Selecione uma imagem.");
@@ -370,7 +387,7 @@ function BannerDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={banner ? "Editar banner" : "Novo banner"}
-      description="O banner branco principal não é editável por esta tela."
+      description="Escolha a arte e sua ação. Um destaque pode substituir temporariamente a abertura branca."
     >
       <form className="space-y-5" onSubmit={submit}>
         <label className="block text-sm font-semibold text-genesis-text">
@@ -443,9 +460,42 @@ function BannerDialog({
             </label>
           )}
           <label className="flex items-center gap-3 rounded-lg border border-genesis-border p-3 text-sm font-semibold">
-            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+            <input type="checkbox" checked={active} onChange={(e) => {
+              setActive(e.target.checked);
+              if (!e.target.checked) {
+                setIsPrimary(false);
+                if (banner?.isPrimary || isPrimary) setPrimaryChanged(true);
+              }
+            }} />
             Publicar banner
           </label>
+        </div>
+        <div className="space-y-2 rounded-lg border border-genesis-border p-3">
+          <label className="flex min-h-10 items-center gap-3 text-sm font-semibold">
+            <input
+              type="checkbox"
+              checked={isPrimary}
+              disabled={!active || !primaryEnabled || saveMutation.isPending}
+              aria-describedby="primary-banner-help"
+              onChange={(event) => {
+                setIsPrimary(event.target.checked);
+                setPrimaryChanged(true);
+              }}
+            />
+            Usar como banner principal
+          </label>
+          <p id="primary-banner-help" className="text-xs text-genesis-muted">
+            {primaryEnabled
+              ? "Substitui temporariamente o banner branco de abertura do site. Ao desmarcar, o banner branco volta a aparecer primeiro."
+              : "A seleção de banner principal ainda não está habilitada neste ambiente."}
+          </p>
+          {primaryEnabled && !active && <p className="text-xs text-genesis-muted">Publique o banner para usá-lo como principal.</p>}
+          {primaryChanged && isPrimary && currentPrimary && currentPrimary.id !== banner?.id && (
+            <p className="text-xs text-genesis-muted">Ao salvar, este banner substituirá {currentPrimary.title} como principal. O anterior continuará publicado.</p>
+          )}
+          {banner?.isPrimary && (!active || !isPrimary) && (
+            <p className="text-xs text-genesis-muted">Ao salvar, o banner branco será restaurado como abertura.</p>
+          )}
         </div>
         <div className="flex flex-col-reverse gap-2 border-t border-genesis-border pt-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>

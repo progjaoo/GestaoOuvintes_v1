@@ -11,6 +11,7 @@ process.env.CAMPAIGN_STARTS_AT = "2026-01-01T00:00:00Z";
 process.env.PUBLIC_CONFIG_READ_MODE = "r2";
 process.env.PUBLIC_CONFIG_SNAPSHOT_WRITE_ENABLED = "true";
 process.env.PUBLIC_CONFIG_NAMESPACE = "test/radio-88";
+process.env.INSTITUTIONAL_PRIMARY_BANNER_ENABLED = "true";
 process.env.R2_ACCOUNT_ID = "test-account";
 process.env.R2_ACCESS_KEY_ID = "test-access-key";
 process.env.R2_SECRET_ACCESS_KEY = "test-secret-key";
@@ -22,7 +23,11 @@ const content = {
   namespace: "test/radio-88",
   campaigns: [],
   placements: [],
-  banners: [],
+  banners: [{
+    id: "fd0052c2-1303-45df-819b-fabfdcd1775c", title: "Festa", altText: "Festa da radio",
+    placementKey: "home_hero", imageUrl: "https://media.example.test/festa.webp", actionType: "none",
+    destinationUrl: null, openInNewTab: false, order: 2, isPrimary: true,
+  }],
 };
 const revision = createHash("sha256").update(JSON.stringify(content)).digest("hex");
 const serializedSnapshot = JSON.stringify({
@@ -75,7 +80,7 @@ describe("public config R2 routes", () => {
     expect(placement.json()).toMatchObject({ campaign: null, version: 0 });
     expect(placement.headers["cache-control"]).toContain("s-maxage=60");
     expect(banners.statusCode).toBe(200);
-    expect(banners.json()).toEqual({ version: Number.parseInt(revision.slice(0, 12), 16), items: [] });
+    expect(banners.json()).toEqual({ version: Number.parseInt(revision.slice(0, 12), 16), items: content.banners });
     expect(session.statusCode).toBe(200);
     expect(session.json()).toMatchObject({
       campaign: null,

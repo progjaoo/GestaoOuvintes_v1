@@ -15,19 +15,20 @@ const expectedMigrations = [
   "0004_institutional_banner_action_type.sql",
   "0005_listener_registration_campaign_phone_unique.sql",
   "0006_sweepstake_draws.sql",
+  "0013_institutional_banner_primary.sql",
 ];
 
-describeLegacy("compatibilidade com producao nas migrations 0001-0006", () => {
+describeLegacy("compatibilidade com producao 0001-0006 mais banner principal 0013", () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
     const databaseUrl = new URL(process.env.DATABASE_URL ?? "");
     if (
       databaseUrl.hostname !== "127.0.0.1" ||
-      databaseUrl.port !== "5435" ||
-      databaseUrl.pathname !== "/radio88_hotfix_compute_test"
+      databaseUrl.port !== "5436" ||
+      databaseUrl.pathname !== "/radio88_primary_banner_test"
     ) {
-      throw new Error("O teste legado aceita somente o PostgreSQL Docker radio88_hotfix_compute_test.");
+      throw new Error("O teste legado aceita somente o PostgreSQL Docker radio88_primary_banner_test.");
     }
 
     const migrations = await db.execute<{ id: string }>(sql`

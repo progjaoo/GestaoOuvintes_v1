@@ -204,6 +204,7 @@ export interface InstitutionalBanner {
   openInNewTab: boolean;
   displayOrder: number;
   active: boolean;
+  isPrimary?: boolean;
   imageUrl: string | null;
   objectKey: string;
   width: number;
@@ -222,4 +223,5 @@ export interface InstitutionalBannerInput {
   destinationUrl: string | null;
   openInNewTab: boolean;
   active: boolean;
+  isPrimary?: boolean;
 }

@@ -64,6 +64,7 @@ const commonCreateShape = {
   altText: z.string().trim().min(2).max(220),
   placementKey: placementKey.default("home_hero"),
   active: z.boolean().default(false),
+  isPrimary: z.boolean().optional(),
 };
 
 export const bannerIdParamsSchema = z.object({ id: z.uuid() });
@@ -101,6 +102,7 @@ export const updateInstitutionalBannerSchema = z.object({
   destinationUrl: secureDestinationUrl.nullable().optional(),
   openInNewTab: z.boolean().optional(),
   active: z.boolean().optional(),
+  isPrimary: z.boolean().optional(),
 });
 export const reorderInstitutionalBannersSchema = z.object({
   placementKey: placementKey.default("home_hero"),

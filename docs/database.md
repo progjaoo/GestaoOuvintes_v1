@@ -76,6 +76,24 @@ Scripts:
 
 Backups devem ser copiados para fora da VPS, preferencialmente criptografados.
 
+## Banner principal institucional (Plan 050)
+
+Migration aditiva: `0013_institutional_banner_primary.sql`. A numeracao evita
+colisao com `0007` a `0012` da linha ainda nao publicada de Clerk/tenancy.
+Esta entrega usa apenas `0001` a `0006` mais `0013`; nao executar migrations
+daquela linha para habilitar o destaque.
+
+`institutional_banner.is_primary` inicia falso. Um indice parcial unico por
+`placement_key` garante um unico destaque; o check exige banner ativo, nao
+excluido e no placement `home_hero`. A API serializa as mutacoes editoriais e
+registra a troca em `admin_audit_log`. A futura integracao com tenancy deve
+reconciliar o indice para incluir o tenant.
+
+Teste descartavel: `npm run test:compat:legacy`, PostgreSQL 17 no compose
+`radio88-plan050-legacy`, porta `127.0.0.1:5436`, banco
+`radio88_primary_banner_test`. Os scripts recusam outro destino e verificam
+a allowlist exata de migrations. Nenhum teste destrutivo usa o Neon.
+
 ## Sorteios auditaveis
 
 As migracoes de sorteio foram introduzidas em `0006_sweepstake_draws.sql`.

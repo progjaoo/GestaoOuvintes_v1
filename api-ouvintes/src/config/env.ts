@@ -52,6 +52,7 @@ const envSchema = z.object({
   R2_PUBLIC_BASE_URL: optionalUrl,
   R2_OBJECT_PREFIX: z.string().default("banners-institucional"),
   INSTITUTIONAL_BANNER_MAX_BYTES: z.coerce.number().int().positive().default(10_485_760),
+  INSTITUTIONAL_PRIMARY_BANNER_ENABLED: booleanFromString,
   PUBLIC_CONFIG_READ_MODE: z.enum(["database", "r2"]).default("database"),
   PUBLIC_CONFIG_SNAPSHOT_WRITE_ENABLED: booleanFromString,
   PUBLIC_CONFIG_NAMESPACE: optionalNonEmptyString,

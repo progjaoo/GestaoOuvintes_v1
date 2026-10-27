@@ -42,6 +42,8 @@ const bannerSchema = z.object({
   destinationUrl: z.string().nullable(),
   openInNewTab: z.boolean(),
   order: z.number().int(),
+  // Keep absence intact until the legacy content hash has been verified.
+  isPrimary: z.boolean().optional(),
 });
 
 const snapshotContentSchema = z.object({
@@ -91,7 +93,7 @@ function revisionFor(content: SnapshotContent) {
   return createHash("sha256").update(JSON.stringify(content)).digest("hex");
 }
 
-function parseSnapshot(value: unknown): PublicConfigSnapshot {
+export function parseSnapshot(value: unknown): PublicConfigSnapshot {
   const parsed = snapshotSchema.parse(value);
   const { revision, generatedAt: _generatedAt, ...content } = parsed;
   if (revisionFor(content) !== revision || content.namespace !== env.PUBLIC_CONFIG_NAMESPACE) {
@@ -109,8 +111,8 @@ export function isPublicConfigSnapshotWriteEnabled() {
 }
 
 async function querySnapshotContent(executor: Pick<typeof db, "select">): Promise<SnapshotContent> {
-  const [campaignRows, placementRows, bannerRows] = await Promise.all([
-    executor.select({
+  // The publisher uses one transaction/client; queries must not run concurrently.
+  const campaignRows = await executor.select({
       id: campaigns.id,
       slug: campaigns.slug,
       type: campaigns.type,
@@ -124,13 +126,13 @@ async function querySnapshotContent(executor: Pick<typeof db, "select">): Promis
       endsAt: campaigns.endsAt,
     }).from(campaigns)
       .where(and(isNull(campaigns.archivedAt), ne(campaigns.status, "draft")))
-      .orderBy(asc(campaigns.slug)),
-    executor.select({
+      .orderBy(asc(campaigns.slug));
+  const placementRows = await executor.select({
       placementKey: campaignPlacements.placementKey,
       campaignId: campaignPlacements.campaignId,
       version: campaignPlacements.version,
-    }).from(campaignPlacements).orderBy(asc(campaignPlacements.placementKey)),
-    executor.select({
+    }).from(campaignPlacements).orderBy(asc(campaignPlacements.placementKey));
+  const bannerRows = await executor.select({
       id: institutionalBanners.id,
       title: institutionalBanners.title,
       altText: institutionalBanners.altText,
@@ -140,6 +142,7 @@ async function querySnapshotContent(executor: Pick<typeof db, "select">): Promis
       destinationUrl: institutionalBanners.destinationUrl,
       openInNewTab: institutionalBanners.openInNewTab,
       displayOrder: institutionalBanners.displayOrder,
+      isPrimary: institutionalBanners.isPrimary,
     }).from(institutionalBanners)
       .innerJoin(mediaAssets, eq(mediaAssets.id, institutionalBanners.mediaAssetId))
       .where(and(
@@ -147,8 +150,7 @@ async function querySnapshotContent(executor: Pick<typeof db, "select">): Promis
         isNull(institutionalBanners.deletedAt),
         eq(mediaAssets.status, "ready"),
       ))
-      .orderBy(asc(institutionalBanners.placementKey), asc(institutionalBanners.displayOrder)),
-  ]);
+      .orderBy(asc(institutionalBanners.placementKey), asc(institutionalBanners.displayOrder));
 
   if (!env.R2_PUBLIC_BASE_URL && bannerRows.length > 0) {
     throw new AppError(503, "MEDIA_PUBLIC_URL_NOT_CONFIGURED", "A URL publica dos banners nao foi configurada.");
@@ -165,6 +167,7 @@ async function querySnapshotContent(executor: Pick<typeof db, "select">): Promis
     destinationUrl: banner.destinationUrl,
     openInNewTab: banner.openInNewTab,
     order: banner.displayOrder,
+    ...(env.INSTITUTIONAL_PRIMARY_BANNER_ENABLED ? { isPrimary: banner.isPrimary } : {}),
   }));
 
   return snapshotContentSchema.parse({
@@ -319,7 +322,13 @@ export function getSnapshotBanners(snapshot: PublicConfigSnapshot, placementKey:
     (banner) => banner.placementKey === placementKey,
   );
   const version = Number.parseInt(snapshot.revision.slice(0, 12), 16);
-  return { version, items: selected };
+  return {
+    version,
+    items: selected.map((banner) => ({
+      ...banner,
+      isPrimary: env.INSTITUTIONAL_PRIMARY_BANNER_ENABLED && banner.isPrimary === true,
+    })),
+  };
 }
 
 export function resetPublicConfigSnapshotCacheForTests() {

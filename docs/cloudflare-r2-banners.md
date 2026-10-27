@@ -66,7 +66,10 @@ VITE_GESTAO_OUVINTES_API_URL=https://api.seudominio.com.br
 3. A API grava uma chave imutável no R2 com cache de um ano.
 4. PostgreSQL armazena somente `object_key` e metadados.
 5. O endpoint público resolve `imageUrl` usando `R2_PUBLIC_BASE_URL`.
-6. O site mantém o slide branco local e acrescenta apenas os banners ativos.
+6. Sem principal selecionado, o site mantém o branco primeiro e acrescenta os banners ativos.
+   Com a funcionalidade de principal habilitada, a arte selecionada substitui temporariamente
+   o branco; as demais seguem a ordem comum. A selecao e feita no Gestao de Ouvintes,
+   nao nos metadados do objeto R2.
 
 ### Arquivo enviado manualmente ao R2
 
@@ -102,8 +105,26 @@ npm test
 ```
 
 Sem as credenciais, mantenha `MEDIA_STORAGE_DRIVER=disabled`. A consulta pública retorna lista
-vazia e o institucional usa seus banners estáticos de fallback. O upload administrativo retorna
+vazia e o institucional usa somente o banner branco de fallback. O upload administrativo retorna
 erro controlado `MEDIA_STORAGE_NOT_CONFIGURED`.
+
+## Banner principal
+
+A migration `0013_institutional_banner_primary.sql` acrescenta `is_primary` com
+valor inicial falso. A flag backend `INSTITUTIONAL_PRIMARY_BANNER_ENABLED`
+habilita o controle e a projecao publica depois da preparacao do leitor R2.
+Veja a sequencia e o rollback em
+[Snapshot de configuracao publica](../api-ouvintes/docs/public-config-snapshot.md).
+
+No painel, editar um banner publicado, marcar **Usar como banner principal**
+e salvar. Somente um banner de `home_hero` pode ser principal. Desmarcar,
+desativar ou excluir o principal restaura o branco; reativar o banner nao o
+torna principal automaticamente. A ordenacao comum fica preservada.
+
+A escolha e persistida numa transacao com lock e indice unico. Os endpoints
+publicos continuam lendo o snapshot, sem nova consulta por visitante nem
+polling. Recarregar a Home depois de sincronizar; os caches existentes podem
+levar aproximadamente 75 segundos para refletir uma alteracao.
 
 ## Backup e limpeza
 
