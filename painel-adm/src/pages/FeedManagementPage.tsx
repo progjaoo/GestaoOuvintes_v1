@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { api, ApiError } from "@/services/api";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import type { EditorialPost } from "@/types/feed";
+import { feedPublicPostUrl } from "@/services/feed-public-url";
 
 export function FeedManagementPage() {
   usePageTitle("Conteúdo do Feed");
@@ -73,13 +74,14 @@ export function FeedManagementPage() {
 }
 
 function PostRow({ post, onPublish, onArchive, busy }: { post: EditorialPost; onPublish: () => void; onArchive: () => void; busy: boolean }) {
+  const publicUrl = feedPublicPostUrl(import.meta.env.VITE_FEED_SITE_BASE_URL, post.slug);
   const title = post.draftRevision?.title ?? post.publishedRevision?.title ?? post.slug;
   const revision = post.draftRevision ?? post.publishedRevision;
   const canPublish = post.status !== "archived" && Boolean(post.draftRevision?.id);
   const canArchive = post.status === "published" && Boolean(post.publishedRevision?.id);
   return <article className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-5">
     <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${post.status === "published" ? "bg-emerald-50 text-emerald-800" : post.status === "archived" ? "bg-neutral-100 text-neutral-600" : "bg-amber-50 text-amber-800"}`}>{post.status === "published" ? "Publicada" : post.status === "archived" ? "Arquivada" : "Rascunho"}</span>{post.category?.name && <span className="text-xs font-semibold text-genesis-muted">{post.category.name}</span>}</div><h2 className="mt-2 truncate font-display text-lg font-bold text-genesis-text">{title}</h2><p className="mt-1 truncate font-mono text-xs text-genesis-muted">/feed/{post.slug} · atualizado {new Date(post.updatedAt).toLocaleString("pt-BR")}</p></div>
-    <div className="flex flex-wrap gap-2"><Link to={`/conteudo/feed/${post.id}/editar`}><Button variant="outline" size="sm"><Pencil size={14} /> Editar</Button></Link>{canPublish && <Button size="sm" disabled={busy} onClick={() => { if (revision?.id && window.confirm(`Solicitar publicação de “${title}”?`)) onPublish(); }}><Send size={14} /> Publicar</Button>}{canArchive && <Button variant="outline" size="sm" disabled={busy} onClick={() => { if (post.publishedRevision?.id && window.confirm(`Solicitar retirada de “${title}”? A versão pública atual seguirá no ar até o deploy.`)) onArchive(); }}><Archive size={14} /> Retirar</Button>}{post.status === "published" && <a href={`/feed/${post.slug}`} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs font-semibold text-genesis-muted hover:bg-neutral-100"><ExternalLink size={14} /> Ver</a>}</div>
+    <div className="flex flex-wrap gap-2"><Link to={`/conteudo/feed/${post.id}/editar`}><Button variant="outline" size="sm"><Pencil size={14} /> Editar</Button></Link>{canPublish && <Button size="sm" disabled={busy} onClick={() => { if (revision?.id && window.confirm(`Solicitar publicação de “${title}”?`)) onPublish(); }}><Send size={14} /> Publicar</Button>}{canArchive && <Button variant="outline" size="sm" disabled={busy} onClick={() => { if (post.publishedRevision?.id && window.confirm(`Solicitar retirada de “${title}”? A versão pública atual seguirá no ar até o deploy.`)) onArchive(); }}><Archive size={14} /> Retirar</Button>}{post.status === "published" && publicUrl && <a href={publicUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs font-semibold text-genesis-muted hover:bg-neutral-100"><ExternalLink size={14} /> Ver</a>}</div>
   </article>;
 }
 

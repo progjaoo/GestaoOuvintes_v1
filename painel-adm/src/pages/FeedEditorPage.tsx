@@ -113,7 +113,14 @@ export function FeedEditorPage() {
   });
   const checkRelease = useMutation({
     mutationFn: () => api.checkFeedRelease(releaseId),
-    onSuccess: (result) => { setReleaseStatus(result.status); toast[result.live ? "success" : "info"](result.live ? "O site confirmou esta release." : `O site ainda não confirmou. Situação: ${result.status}.`); void queryClient.invalidateQueries({ queryKey: ["feed-posts"] }); },
+    onSuccess: async (result) => {
+      setReleaseStatus(result.status);
+      toast[result.live ? "success" : "info"](result.live ? "O site confirmou esta release." : `O site ainda não confirmou. Situação: ${result.status}.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["feed-posts"] }),
+        queryClient.invalidateQueries({ queryKey: ["feed-post", id] }),
+      ]);
+    },
     onError: (error) => toast.error(error instanceof ApiError ? error.message : "Não foi possível consultar a publicação."),
   });
   const retryRelease = useMutation({
