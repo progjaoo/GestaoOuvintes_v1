@@ -43,6 +43,8 @@ describe("public config R2 routes", () => {
   let send: ReturnType<typeof vi.spyOn>;
 
   beforeAll(async () => {
+    await import("dotenv/config");
+    delete process.env.VERCEL_ENV;
     const { S3Client } = await import("@aws-sdk/client-s3");
     send = vi.spyOn(S3Client.prototype, "send").mockImplementation(async () => ({
       Body: { transformToString: async () => serializedSnapshot },

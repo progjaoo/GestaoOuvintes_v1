@@ -19,6 +19,7 @@ import type {
   SweepstakeDrawResponse,
   SweepstakeStatusResponse,
 } from "@/types/api";
+import type { EditorialCategory, EditorialMediaAsset, EditorialMediaPreview, EditorialPost, EditorialRevisionInput } from "@/types/feed";
 
 const API_URL = (import.meta.env.VITE_CADASTROS_API_URL ?? "http://127.0.0.1:3010")
   .replace(/\/+$/, "");
@@ -349,6 +350,117 @@ export const api = {
       `/api/admin/listener-registrations/export${query}`,
       `cadastros-radio88.${format}`,
     );
+  },
+
+  listFeedCategories() {
+    return request<{ items: EditorialCategory[] }>("/api/admin/feed/categories");
+  },
+
+  createFeedCategory(input: { name: string; slug: string }) {
+    return request<EditorialCategory>("/api/admin/feed/categories", { method: "POST", body: JSON.stringify(input) });
+  },
+
+  updateFeedCategory(id: string, input: Partial<{ name: string; slug: string; active: boolean }>) {
+    return request<EditorialCategory>(`/api/admin/feed/categories/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+  },
+
+  listFeedPosts(params: { page?: number; pageSize?: number; status?: "draft" | "published" | "archived" | "all"; q?: string; categoryId?: string } = {}) {
+    return request<{ items: EditorialPost[]; page: number; pageSize: number; total: number }>(`/api/admin/feed/posts${toQueryString(params)}`);
+  },
+
+  getFeedPost(id: string) {
+    return request<EditorialPost>(`/api/admin/feed/posts/${id}`);
+  },
+
+  createFeedDraft(revision: EditorialRevisionInput) {
+    return request<{ id: string; revisionId: string; revisionNumber: number }>("/api/admin/feed/posts", {
+      method: "POST",
+      body: JSON.stringify({ revision }),
+    });
+  },
+
+  updateFeedDraft(postId: string, expectedVersion: number, revision: EditorialRevisionInput) {
+    return request<{ id: string; revisionId: string; revisionNumber: number }>(`/api/admin/feed/posts/${postId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ expectedVersion, revision }),
+    });
+  },
+
+  listFeedAssets(params: { page?: number; pageSize?: number } = {}) {
+    return request<{ items: EditorialMediaAsset[]; page: number; pageSize: number }>(`/api/admin/feed/assets${toQueryString(params)}`);
+  },
+
+  getFeedAssetPreview(id: string) {
+    return request<EditorialMediaPreview>(`/api/admin/feed/assets/${id}/preview`);
+  },
+
+  publishFeedPost(postId: string, revisionId: string) {
+    const idempotencyKey = crypto.randomUUID();
+    return request<{ releaseId: string; status: string; duplicate: boolean }>(`/api/admin/feed/posts/${postId}/publish`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ revisionId, idempotencyKey }),
+    });
+  },
+
+  async uploadFeedAsset(file: File, mediaType: "image" | "gif" | "video", onProgress?: (progress: number) => void, signal?: AbortSignal) {
+    const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    const checksumSha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const upload = await request<{ asset: EditorialMediaAsset; uploadUrl: string; requiredHeaders: Record<string, string> }>("/api/admin/feed/assets/uploads", {
+      method: "POST",
+      body: JSON.stringify({ mediaType, mimeType: file.type, byteSize: file.size, filename: file.name, checksumSha256 }),
+    });
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const abort = () => xhr.abort();
+      xhr.open("PUT", upload.uploadUrl);
+      xhr.withCredentials = false;
+      for (const [name, value] of Object.entries(upload.requiredHeaders)) xhr.setRequestHeader(name, value);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+      };
+      xhr.onload = () => {
+        signal?.removeEventListener("abort", abort);
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new ApiError(xhr.status, "FEED_UPLOAD_FAILED", "Não foi possível enviar a mídia ao armazenamento privado de Preview."));
+      };
+      xhr.onerror = () => {
+        signal?.removeEventListener("abort", abort);
+        reject(new ApiError(0, "FEED_UPLOAD_CORS_OR_NETWORK", "O envio ao R2 falhou. Verifique o CORS do bucket privado para a origem deste painel e tente novamente."));
+      };
+      xhr.onabort = () => {
+        signal?.removeEventListener("abort", abort);
+        reject(new ApiError(0, "FEED_UPLOAD_ABORTED", "O envio da mídia foi cancelado."));
+      };
+      if (signal?.aborted) {
+        reject(new ApiError(0, "FEED_UPLOAD_ABORTED", "O envio da mídia foi cancelado."));
+        return;
+      }
+      signal?.addEventListener("abort", abort, { once: true });
+      xhr.send(file);
+    });
+    onProgress?.(100);
+    return request<EditorialMediaAsset>(`/api/admin/feed/assets/${upload.asset.id}/complete`, { method: "POST" });
+  },
+
+  archiveFeedPost(postId: string, revisionId: string) {
+    const idempotencyKey = crypto.randomUUID();
+    return request<{ releaseId: string; status: string; duplicate: boolean }>(`/api/admin/feed/posts/${postId}/archive`, {
+      method: "POST",
+      body: JSON.stringify({ revisionId, idempotencyKey }),
+    });
+  },
+
+  checkFeedRelease(releaseId: string) {
+    return request<{ id: string; status: string; live: boolean }>(`/api/admin/feed/releases/${releaseId}/check`, { method: "POST" });
+  },
+
+  getFeedRelease(releaseId: string) {
+    return request<{ id: string; status: string; errorCode?: string | null; updatedAt: string }>(`/api/admin/feed/releases/${releaseId}`);
+  },
+
+  retryFeedRelease(releaseId: string) {
+    return request<{ releaseId: string; status: string }>(`/api/admin/feed/releases/${releaseId}/retry`, { method: "POST" });
   },
 };
 

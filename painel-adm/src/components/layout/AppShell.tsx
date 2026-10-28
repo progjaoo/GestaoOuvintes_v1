@@ -4,6 +4,7 @@ import {
   CalendarRange,
   AlertTriangle,
   Images,
+  BookOpen,
   Headphones,
   LogOut,
   Menu,
@@ -41,11 +42,21 @@ const navigation = [
     icon: Images,
     adminOnly: true,
   },
+  {
+    label: "Conteúdo do Feed",
+    path: "/conteudo/feed",
+    icon: BookOpen,
+    permission: "feed.read",
+  },
 ];
 
 function NavigationLinks({ onNavigate }: { onNavigate?: () => void }) {
   const { user } = useAuth();
-  const visibleNavigation = navigation.filter((item) => !("adminOnly" in item) || !item.adminOnly || user?.role === "admin");
+  const visibleNavigation = navigation.filter((item) => {
+    if ("adminOnly" in item && item.adminOnly && user?.role !== "admin") return false;
+    if ("permission" in item && item.permission) return user?.role === "admin" || Boolean(user?.permissions?.includes(item.permission));
+    return true;
+  });
 
   return (
     <nav aria-label="Navegação principal" className="space-y-1">

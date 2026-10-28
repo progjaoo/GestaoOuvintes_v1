@@ -57,6 +57,14 @@ const envSchema = z.object({
   PUBLIC_CONFIG_SNAPSHOT_WRITE_ENABLED: booleanFromString,
   PUBLIC_CONFIG_NAMESPACE: optionalNonEmptyString,
   PUBLIC_CONFIG_R2_TIMEOUT_MS: z.coerce.number().int().min(500).max(10_000).default(4_000),
+  FEED_ENABLED: booleanFromString,
+  FEED_PUBLICATION_ENABLED: booleanFromString,
+  FEED_NAMESPACE: optionalNonEmptyString,
+  FEED_PRIVATE_BUCKET_NAME: optionalNonEmptyString,
+  FEED_DEPLOY_HOOK_URL: optionalUrl,
+  FEED_SITE_BASE_URL: optionalUrl,
+  FEED_SITE_PROTECTION_BYPASS_SECRET: optionalNonEmptyString,
+  FEED_MAX_UPLOAD_BYTES: z.coerce.number().int().positive().max(50 * 1024 * 1024).default(50 * 1024 * 1024),
 });
 
 const result = envSchema.safeParse(process.env);
@@ -119,9 +127,45 @@ if (publicConfigEnabled) {
   }
 }
 
+if (
+  result.data.FEED_PUBLICATION_ENABLED &&
+  (!result.data.FEED_ENABLED || !result.data.FEED_NAMESPACE ||
+    !result.data.FEED_PRIVATE_BUCKET_NAME || !result.data.FEED_DEPLOY_HOOK_URL ||
+    !result.data.FEED_SITE_BASE_URL || !result.data.R2_ACCOUNT_ID ||
+    !result.data.R2_ACCESS_KEY_ID || !result.data.R2_SECRET_ACCESS_KEY ||
+    !result.data.R2_PUBLIC_BASE_URL)
+) {
+  throw new Error("FEED_PUBLICATION_ENABLED exige configuracao editorial completa por ambiente.");
+}
+
+if (result.data.FEED_NAMESPACE && !/^(development|test|preview|production)\/radio-88$/.test(result.data.FEED_NAMESPACE)) {
+  throw new Error("FEED_NAMESPACE deve identificar explicitamente o ambiente e radio-88.");
+}
+if (result.data.FEED_ENABLED && (!result.data.FEED_NAMESPACE || !result.data.FEED_PRIVATE_BUCKET_NAME ||
+  !result.data.R2_ACCOUNT_ID || !result.data.R2_ACCESS_KEY_ID || !result.data.R2_SECRET_ACCESS_KEY)) {
+  throw new Error("FEED_ENABLED exige namespace isolado, bucket privado e credenciais R2 para upload direto.");
+}
+if (result.data.FEED_ENABLED && result.data.FEED_PRIVATE_BUCKET_NAME === result.data.R2_BUCKET_NAME) {
+  throw new Error("O bucket editorial privado deve ser diferente do bucket publico usado pelo site e banners.");
+}
+if (
+  result.data.FEED_ENABLED && result.data.VERCEL_ENV === "preview" &&
+  (result.data.FEED_PRIVATE_BUCKET_NAME !== "radio88-feed-preview-private" ||
+    result.data.R2_BUCKET_NAME !== "radio88-feed-preview-public")
+) {
+  throw new Error("Feed no Vercel Preview exige os buckets isolados radio88-feed-preview-private e radio88-feed-preview-public explicitamente configurados.");
+}
+if (result.data.FEED_ENABLED && result.data.VERCEL_ENV && !result.data.FEED_NAMESPACE?.startsWith(`${result.data.VERCEL_ENV}/`)) {
+  throw new Error("FEED_NAMESPACE nao corresponde ao ambiente Vercel.");
+}
+if (result.data.FEED_NAMESPACE?.startsWith("production/") && result.data.VERCEL_ENV !== "production") {
+  throw new Error("O namespace editorial de producao exige VERCEL_ENV=production.");
+}
+
 export const env = {
   ...result.data,
   PUBLIC_CONFIG_NAMESPACE: result.data.PUBLIC_CONFIG_NAMESPACE ?? "",
+  FEED_NAMESPACE: result.data.FEED_NAMESPACE ?? "",
   DEVICE_TOKEN_SECRET: result.data.DEVICE_TOKEN_SECRET ?? result.data.JWT_SECRET,
   corsAllowedOrigins: result.data.CORS_ALLOWED_ORIGINS.split(",")
     .map((origin) => origin.trim())

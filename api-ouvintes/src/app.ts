@@ -16,6 +16,7 @@ import { healthRoutes } from "./routes/health.js";
 import { publicRoutes } from "./routes/public.js";
 import { publicInstitutionalBannerRoutes } from "./routes/public-institutional-banners.js";
 import { adminPublicConfigRoutes } from "./routes/admin-public-config.js";
+import { adminFeedRoutes } from "./routes/admin-feed.js";
 
 function isDevelopmentLocalOrigin(origin: string) {
   if (env.NODE_ENV !== "development") return false;
@@ -217,6 +218,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     prefix: "/api/admin/institutional-banners",
   });
   await app.register(adminPublicConfigRoutes, { prefix: "/api/admin/public-config" });
+  await app.register(adminFeedRoutes, { prefix: "/api/admin/feed" });
 
   return app;
 }
