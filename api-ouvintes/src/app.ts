@@ -172,7 +172,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
       callback(new AppError(403, "ORIGIN_NOT_ALLOWED", "Origem nao autorizada."), false);
     },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [
       "Content-Type",
       "Authorization",

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 process.env.NODE_ENV = "test";
+process.env.CORS_ALLOWED_ORIGINS = "https://panel.example.test";
 process.env.DATABASE_URL = "postgresql://radio88:test@127.0.0.1:1/radio88_test";
 process.env.DATABASE_SSL = "false";
 process.env.JWT_SECRET = "test-jwt-secret-that-is-at-least-32-characters";
@@ -60,6 +61,32 @@ describe("public config R2 routes", () => {
     await app?.close();
     await pool?.end();
     vi.restoreAllMocks();
+  });
+
+  it("permite preflight PATCH do CMS somente para origem autorizada", async () => {
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/admin/feed/posts/07bed384-2bc4-43a1-a7dd-afa63ea096fb",
+      headers: {
+        origin: "https://panel.example.test",
+        "access-control-request-method": "PATCH",
+        "access-control-request-headers": "authorization,content-type",
+      },
+    });
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe("https://panel.example.test");
+    expect(response.headers["access-control-allow-methods"]).toContain("PATCH");
+
+    const denied = await app.inject({
+      method: "OPTIONS",
+      url: "/api/admin/feed/posts/07bed384-2bc4-43a1-a7dd-afa63ea096fb",
+      headers: {
+        origin: "https://untrusted.example.test",
+        "access-control-request-method": "PATCH",
+      },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
   });
 
   it("serve config e sessão indisponível sem consultar o PostgreSQL", async () => {
