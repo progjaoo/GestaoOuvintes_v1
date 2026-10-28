@@ -63,3 +63,13 @@ Ainda nao concluiram: janela ociosa de 15 minutos com evidencia de compute; matr
 Promover um deploy nao transfere conteudo entre bancos/buckets. Nao promover este Preview isolado diretamente como se fosse um build de producao: flags, URLs e storage sao diferentes.
 
 O release de producao exige aprovacao separada, migrations revisadas no destino correto, credenciais e namespace de Production, transferencia editorial explicita de conteudo aprovado e um build de producao testado antes de atribuir o dominio. Nenhuma dessas operacoes de producao foi executada nesta rodada.
+
+## Ajustes editoriais do designer - 28/10/2026
+
+- O formulario nao exige mais descricoes manuais de capa, abertura, imagens, galerias ou GIFs. O payload preserva descricoes antigas e gera um fallback contextual a partir do titulo/legenda quando faltar, sem remover alt/semantica/teclado do leitor publico. Nenhuma migration ou mudanca no contrato da API.
+- Ao escolher uma imagem estatica para upload, abre o editor nativo do painel: proporcao Original, 7:5, 16:9 ou 1:1, ampliacao, posicao e giro de 90 graus. Aplicar e enviar cria um novo WebP (ou PNG em navegadores sem encoder WebP), passando pela mesma validacao/checksum/upload privado da API. Enviar original continua disponivel. GIF e MP4 nao sao rasterizados pelo editor.
+- Imagens selecionadas podem ser editadas novamente em capa, abertura, corpo, galeria e poster. Uma nova midia e criada; nao sobrescrever arquivos ou revisoes publicados. Salvar o rascunho continua necessario.
+- Pre-visualizar abre uma nova aba autenticada com Desktop/Mobile. O rascunho nao salvo e enviado por BroadcastChannel somente em memoria; nao vai em query string, localStorage ou bucket publico. Recarregar apos cinco minutos exige reabrir pelo editor. Bloqueio de pop-up exibe orientacao.
+- GIF inicia automaticamente sem botao de reproducao; a preferencia de movimento reduzido do dispositivo continua respeitada com poster estatico.
+- O institucional apresenta Post Anterior / Proximo Post no fim da materia, na mesma ordem global por Data do acontecimento do Feed (recentes primeiro, desempate por slug, sem data por ultimo). Extremos ficam desabilitados, sem retorno circular ao inicio nem consultas a API/Neon.
+- Atualizar a mesma branch Preview preserva os aliases ja enviados ao designer. A URL unica de cada deploy muda, mas o alias de branch nao. Nao promover Preview a Production.

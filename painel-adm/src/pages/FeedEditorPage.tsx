@@ -8,7 +8,9 @@ import { FeedMediaPickerDialog, type FeedMediaType } from "@/components/feed/Fee
 import { FeedMediaGuidance, type FeedMediaUsage } from "@/components/feed/FeedMediaGuidance";
 import { RichTextBlockEditor } from "@/components/feed/RichTextBlockEditor";
 import { Button } from "@/components/ui/Button";
-import { Dialog } from "@/components/ui/Dialog";
+import { FeedImageEditor } from "@/components/feed/FeedImageEditor";
+import { prepareFeedRevision } from "@/services/feed-revision";
+import { openFeedPreview } from "@/services/feed-preview-channel";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { api, ApiError } from "@/services/api";
 import type { EditorialBlock, EditorialMediaAsset, EditorialPost, EditorialRevisionInput, EditorialTextBlock } from "@/types/feed";
@@ -34,8 +36,7 @@ export function FeedEditorPage() {
   const [slugTouched, setSlugTouched] = useState(editing);
   const [dirty, setDirty] = useState(!editing);
   const [mediaPicker, setMediaPicker] = useState<{ open: boolean; target: string; types: FeedMediaType[] }>({ open: false, target: "", types: ["image"] });
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
+
   const [saved, setSaved] = useState<{ postId: string; revisionId: string; revisionNumber: number } | null>(null);
   const [releaseId, setReleaseId] = useState("");
   const [releaseStatus, setReleaseStatus] = useState("");
@@ -82,7 +83,7 @@ export function FeedEditorPage() {
 
   const save = useMutation({
     mutationFn: async () => {
-      const checked = validateRevision(effectiveRevision);
+      const checked = validateRevision(prepareFeedRevision(effectiveRevision));
       const result = editing && id
         ? await api.updateFeedDraft(id, expectedVersion, checked)
         : await api.createFeedDraft(checked);
@@ -164,7 +165,7 @@ export function FeedEditorPage() {
         if (!block) return;
         const field = match[2];
         if (field === "gallery" && block.type === "gallery") {
-          updateBlock(index, { ...block, items: [...block.items as Array<Record<string, unknown>>, { assetId: asset.id, alt: asset.originalName ?? "Imagem do acervo", caption: "" }] });
+          updateBlock(index, { ...block, items: [...block.items as Array<Record<string, unknown>>, { assetId: asset.id, alt: "", caption: "" }] });
         } else if (field === "image" && block.type === "image") updateBlock(index, { ...block, assetId: asset.id });
         else if (field === "gif" && block.type === "gif") updateBlock(index, { ...block, assetId: asset.id });
         else if (field === "video" && block.type === "video") updateBlock(index, { ...block, source: { kind: "asset", assetId: asset.id } });
@@ -211,18 +212,13 @@ export function FeedEditorPage() {
           <section className="rounded-xl border border-genesis-border bg-white p-4 shadow-sm sm:p-6">
             <SectionHeading eyebrow="02 · Imagens" title="Capa e abertura" description="Escolha imagens distintas ou reutilize o mesmo arquivo com enquadramentos diferentes." />
             <div className="mt-5 grid gap-4 lg:grid-cols-2">
-              <AssetField usage="card" title="Capa da grade" assetId={revision.coverAssetId} onPick={() => openPicker("cover", ["image"])} />
-              <AssetField usage="opening" title="Imagem de abertura" assetId={revision.openingAssetId} onPick={() => openPicker("opening", ["image"])} />
+              <AssetField usage="card" title="Capa da grade" assetId={revision.coverAssetId} onPick={() => openPicker("cover", ["image"])} onEdited={(asset) => { update("coverAssetId", asset.id); update("coverFocusX", 50); update("coverFocusY", 50); }} />
+              <AssetField usage="opening" title="Imagem de abertura" assetId={revision.openingAssetId} onPick={() => openPicker("opening", ["image"])} onEdited={(asset) => { update("openingAssetId", asset.id); update("openingFocusX", 50); update("openingFocusY", 50); }} />
             </div>
             <div className="mt-4 flex flex-wrap gap-3">
               <Button variant="outline" size="sm" type="button" onClick={() => { update("openingAssetId", revision.coverAssetId); update("openingAlt", revision.coverAlt); update("openingFocusX", revision.coverFocusX); update("openingFocusY", revision.coverFocusY); }}>Usar capa também na abertura</Button>
             </div>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <Field label="Descrição acessível da capa"><input required minLength={2} maxLength={220} value={revision.coverAlt} onChange={(event) => update("coverAlt", event.target.value)} className={inputClass} /></Field>
-              <Field label="Descrição acessível da abertura"><input required minLength={2} maxLength={220} value={revision.openingAlt} onChange={(event) => update("openingAlt", event.target.value)} className={inputClass} /></Field>
-              <FocusControls label="Foco da capa" x={revision.coverFocusX} y={revision.coverFocusY} onChange={(x, y) => { update("coverFocusX", x); update("coverFocusY", y); }} />
-              <FocusControls label="Foco da abertura" x={revision.openingFocusX} y={revision.openingFocusY} onChange={(x, y) => { update("openingFocusX", x); update("openingFocusY", y); }} />
-            </div>
+
           </section>
 
           <section className="rounded-xl border border-genesis-border bg-white p-4 shadow-sm sm:p-6">
@@ -248,7 +244,7 @@ export function FeedEditorPage() {
             <p className="mt-1 text-sm leading-6 text-genesis-muted">Salvar mantém o conteúdo no banco administrativo. Visitantes só recebem o HTML estático após a confirmação do deploy.</p>
             <div className="mt-4 flex flex-col gap-2">
               <Button type="submit" disabled={!canSubmit || categories.isLoading || !revision.coverAssetId || !revision.openingAssetId}><Save size={16} />{save.isPending ? "Salvando…" : "Salvar rascunho"}</Button>
-              <Button variant="outline" type="button" onClick={() => setPreviewOpen(true)} disabled={!revision.title || !revision.openingAssetId}><Eye size={16} /> Pré-visualizar</Button>
+              <Button variant="outline" type="button" onClick={() => { if (!openFeedPreview({ revision: prepareFeedRevision(effectiveRevision), categories: categories.data?.items ?? [] })) toast.error("Permita abrir novas abas para visualizar a matéria."); }} disabled={!revision.title || !revision.openingAssetId}><Eye size={16} /> Pré-visualizar</Button>
               <Button variant="secondary" type="button" disabled={!saved || !revision.blocks.length || publish.isPending || currentPost?.status === "archived"} onClick={() => { if (saved && window.confirm("Gerar uma release editorial e iniciar o build do site?")) publish.mutate(); }}><Send size={16} />Solicitar publicação</Button>
             </div>
             {dirty && <p className="mt-3 rounded-md bg-amber-50 p-2.5 text-xs font-semibold text-amber-800">Há alterações ainda não salvas.</p>}
@@ -259,10 +255,7 @@ export function FeedEditorPage() {
         </aside>
       </form>
       <FeedMediaPickerDialog open={mediaPicker.open} onOpenChange={(open) => setMediaPicker((current) => ({ ...current, open }))} allowedTypes={mediaPicker.types} onSelect={selectMedia} />
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen} title="Pré-visualização da matéria" description="Conteúdo privado, ainda não visível para os visitantes." className="sm:max-w-6xl" footer={<Button variant="outline" onClick={() => setPreviewOpen(false)}>Fechar</Button>}>
-        <div className="mb-4 flex justify-end gap-2"><Button variant={previewDevice === "desktop" ? "primary" : "outline"} size="sm" onClick={() => setPreviewDevice("desktop")}>Desktop</Button><Button variant={previewDevice === "mobile" ? "primary" : "outline"} size="sm" onClick={() => setPreviewDevice("mobile")}>Mobile</Button></div>
-        <div className={`mx-auto max-h-[68vh] overflow-y-auto rounded-lg border border-genesis-border bg-white transition-all ${previewDevice === "mobile" ? "max-w-[390px]" : "max-w-5xl"}`}><PrivateArticlePreview revision={effectiveRevision} categories={categories.data?.items ?? []} /></div>
-      </Dialog>
+
     </div>
   </AppShell>;
 }
@@ -284,27 +277,27 @@ function BlockList({ blocks, onChange, onMove, onReorder, onRemove, onDuplicate,
 
 function BlockFields({ block, index, onChange, onPick }: { block: EditorialBlock; index: number; onChange: (block: EditorialBlock) => void; onPick: (target: string, types: FeedMediaType[]) => void }) {
   if (block.type === "text") return <><RichTextBlockEditor value={block.content as EditorialTextBlock["content"]} onChange={(content) => onChange({ ...block, content })} /><label className="text-xs font-semibold text-genesis-muted">Largura do texto<select value={String(block.width ?? "reading")} onChange={(event) => onChange({ ...block, width: event.target.value as "reading" | "wide" })} className={smallSelect}><option value="reading">Coluna confortável</option><option value="wide">Ampla</option></select></label></>;
-  if (block.type === "image") return <><AssetField usage="body" title="Imagem" assetId={String(block.assetId ?? "")} onPick={() => onPick(`block:${index}:image`, ["image"])} /><div className="grid gap-3 md:grid-cols-2"><Field label="Texto alternativo"><input required minLength={2} maxLength={220} value={String(block.alt ?? "")} onChange={(event) => onChange({ ...block, alt: event.target.value })} className={inputClass} /></Field><Field label="Crédito (opcional)"><input maxLength={160} value={String(block.credit ?? "")} onChange={(event) => onChange({ ...block, credit: event.target.value })} className={inputClass} /></Field><Field label="Legenda (opcional)" className="md:col-span-2"><input maxLength={500} value={String(block.caption ?? "")} onChange={(event) => onChange({ ...block, caption: event.target.value })} className={inputClass} /></Field></div><label className="text-xs font-semibold text-genesis-muted">Exibição<select value={String(block.width ?? "wide")} onChange={(event) => onChange({ ...block, width: event.target.value })} className={smallSelect}><option value="wide">Imagem ampla</option><option value="reading">Largura de leitura</option></select></label></>;
+  if (block.type === "image") return <><AssetField usage="body" title="Imagem" assetId={String(block.assetId ?? "")} onPick={() => onPick(`block:${index}:image`, ["image"])} onEdited={(asset) => onChange({ ...block, assetId: asset.id })} /><div className="grid gap-3 md:grid-cols-2"><Field label="Crédito (opcional)"><input maxLength={160} value={String(block.credit ?? "")} onChange={(event) => onChange({ ...block, credit: event.target.value })} className={inputClass} /></Field><Field label="Legenda (opcional)" className="md:col-span-2"><input maxLength={500} value={String(block.caption ?? "")} onChange={(event) => onChange({ ...block, caption: event.target.value })} className={inputClass} /></Field></div><label className="text-xs font-semibold text-genesis-muted">Exibição<select value={String(block.width ?? "wide")} onChange={(event) => onChange({ ...block, width: event.target.value })} className={smallSelect}><option value="wide">Imagem ampla</option><option value="reading">Largura de leitura</option></select></label></>;
   if (block.type === "gallery") {
     const items = Array.isArray(block.items) ? block.items as Array<{ assetId: string; alt: string; caption?: string }> : [];
-    return <><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-genesis-text">{items.length} de 12 imagens selecionadas</p><Button size="sm" variant="outline" type="button" disabled={items.length >= 12} onClick={() => onPick(`block:${index}:gallery`, ["image"])}><ImagePlus size={15} /> Adicionar imagem</Button></div><FeedMediaGuidance usage="body" />{items.map((item, at) => <div key={`${item.assetId}-${at}`} className="grid gap-3 rounded-md border border-genesis-border p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center"><AssetPreview assetId={item.assetId} className="aspect-square w-20 rounded object-cover" /><div className="grid gap-2 sm:grid-cols-2"><input aria-label={`Descrição da imagem ${at + 1}`} required minLength={2} maxLength={220} value={item.alt} onChange={(event) => onChange({ ...block, items: items.map((value, itemIndex) => itemIndex === at ? { ...value, alt: event.target.value } : value) })} className={inputClass} placeholder="Texto alternativo" /><input aria-label={`Legenda da imagem ${at + 1}`} maxLength={300} value={item.caption ?? ""} onChange={(event) => onChange({ ...block, items: items.map((value, itemIndex) => itemIndex === at ? { ...value, caption: event.target.value } : value) })} className={inputClass} placeholder="Legenda opcional" /></div><Button size="icon" variant="ghost" type="button" aria-label={`Remover imagem ${at + 1}`} onClick={() => onChange({ ...block, items: items.filter((_, itemIndex) => itemIndex !== at) })}><Trash2 size={16} /></Button></div>)}<label className="text-xs font-semibold text-genesis-muted">Organização<select value={String(block.layout ?? "mosaic")} onChange={(event) => onChange({ ...block, layout: event.target.value })} className={smallSelect}><option value="mosaic">Mosaico editorial</option><option value="carousel">Carrossel manual</option></select></label>{items.length < 2 && <p className="text-xs text-amber-800">Inclua pelo menos duas imagens para salvar uma galeria.</p>}</>;
+    return <><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-genesis-text">{items.length} de 12 imagens selecionadas</p><Button size="sm" variant="outline" type="button" disabled={items.length >= 12} onClick={() => onPick(`block:${index}:gallery`, ["image"])}><ImagePlus size={15} /> Adicionar imagem</Button></div><FeedMediaGuidance usage="body" />{items.map((item, at) => <div key={`${item.assetId}-${at}`} className="grid gap-3 rounded-md border border-genesis-border p-3 sm:grid-cols-[5rem_1fr_auto] sm:items-center"><div><AssetPreview assetId={item.assetId} className="aspect-square w-20 rounded object-cover" /><EditImageButton assetId={item.assetId} usage="body" onEdited={(asset) => onChange({ ...block, items: items.map((value, itemIndex) => itemIndex === at ? { ...value, assetId: asset.id } : value) })} /></div><div className="grid gap-2 sm:grid-cols-2"><input aria-label={`Legenda da imagem ${at + 1}`} maxLength={300} value={item.caption ?? ""} onChange={(event) => onChange({ ...block, items: items.map((value, itemIndex) => itemIndex === at ? { ...value, caption: event.target.value } : value) })} className={inputClass} placeholder="Legenda opcional" /></div><Button size="icon" variant="ghost" type="button" aria-label={`Remover imagem ${at + 1}`} onClick={() => onChange({ ...block, items: items.filter((_, itemIndex) => itemIndex !== at) })}><Trash2 size={16} /></Button></div>)}<label className="text-xs font-semibold text-genesis-muted">Organização<select value={String(block.layout ?? "mosaic")} onChange={(event) => onChange({ ...block, layout: event.target.value })} className={smallSelect}><option value="mosaic">Mosaico editorial</option><option value="carousel">Carrossel manual</option></select></label>{items.length < 2 && <p className="text-xs text-amber-800">Inclua pelo menos duas imagens para salvar uma galeria.</p>}</>;
   }
   if (block.type === "video") {
     const source = block.source as { kind: "asset" | "youtube"; assetId?: string; videoId?: string } | undefined;
-    return <><Field label="Fonte do vídeo"><select value={source?.kind ?? "youtube"} onChange={(event) => onChange({ ...block, source: event.target.value === "asset" ? { kind: "asset", assetId: "" } : { kind: "youtube", videoId: "" } })} className={inputClass}><option value="youtube">YouTube</option><option value="asset">Arquivo MP4 do acervo</option></select></Field>{source?.kind === "asset" ? <AssetField usage="video" title="Vídeo MP4" assetId={source.assetId ?? ""} mediaType="video" posterAssetId={String(block.posterAssetId ?? "")} onPick={() => onPick(`block:${index}:video`, ["video"])} /> : <Field label="URL ou ID do vídeo YouTube"><input value={source?.videoId ?? ""} onChange={(event) => onChange({ ...block, source: { kind: "youtube", videoId: youtubeId(event.target.value) } })} className={inputClass} placeholder="https://youtube.com/watch?v=…" /></Field>}<div className="grid gap-3 md:grid-cols-2"><Field label="Título acessível"><input required minLength={2} maxLength={180} value={String(block.title ?? "")} onChange={(event) => onChange({ ...block, title: event.target.value })} className={inputClass} /></Field><Field label="Legenda (opcional)"><input maxLength={500} value={String(block.caption ?? "")} onChange={(event) => onChange({ ...block, caption: event.target.value })} className={inputClass} /></Field></div><AssetField usage="poster" title="Poster estático" assetId={String(block.posterAssetId ?? "")} onPick={() => onPick(`block:${index}:poster`, ["image"])} /><p className="text-xs text-genesis-muted">Vídeo MP4 exige poster. Arquivos próprios são progressivos; legendas em arquivo ainda não estão disponíveis nesta etapa.</p></>;
+    return <><Field label="Fonte do vídeo"><select value={source?.kind ?? "youtube"} onChange={(event) => onChange({ ...block, source: event.target.value === "asset" ? { kind: "asset", assetId: "" } : { kind: "youtube", videoId: "" } })} className={inputClass}><option value="youtube">YouTube</option><option value="asset">Arquivo MP4 do acervo</option></select></Field>{source?.kind === "asset" ? <AssetField usage="video" title="Vídeo MP4" assetId={source.assetId ?? ""} mediaType="video" posterAssetId={String(block.posterAssetId ?? "")} onPick={() => onPick(`block:${index}:video`, ["video"])} /> : <Field label="URL ou ID do vídeo YouTube"><input value={source?.videoId ?? ""} onChange={(event) => onChange({ ...block, source: { kind: "youtube", videoId: youtubeId(event.target.value) } })} className={inputClass} placeholder="https://youtube.com/watch?v=…" /></Field>}<div className="grid gap-3 md:grid-cols-2"><Field label="Título do vídeo"><input required minLength={2} maxLength={180} value={String(block.title ?? "")} onChange={(event) => onChange({ ...block, title: event.target.value })} className={inputClass} /></Field><Field label="Legenda (opcional)"><input maxLength={500} value={String(block.caption ?? "")} onChange={(event) => onChange({ ...block, caption: event.target.value })} className={inputClass} /></Field></div><AssetField usage="poster" title="Poster estático" assetId={String(block.posterAssetId ?? "")} onPick={() => onPick(`block:${index}:poster`, ["image"])} onEdited={(asset) => onChange({ ...block, posterAssetId: asset.id })} /><p className="text-xs text-genesis-muted">Vídeo MP4 exige poster. Arquivos próprios são progressivos; legendas em arquivo ainda não estão disponíveis nesta etapa.</p></>;
   }
-  if (block.type === "gif") return <><AssetField usage="gif" title="GIF animado" assetId={String(block.assetId ?? "")} mediaType="gif" posterAssetId={String(block.posterAssetId ?? "")} onPick={() => onPick(`block:${index}:gif`, ["gif"])} /><div className="grid gap-3 md:grid-cols-2"><Field label="Texto alternativo"><input required minLength={2} maxLength={220} value={String(block.alt ?? "")} onChange={(event) => onChange({ ...block, alt: event.target.value })} className={inputClass} /></Field><Field label="Legenda (opcional)"><input maxLength={500} value={String(block.caption ?? "")} onChange={(event) => onChange({ ...block, caption: event.target.value })} className={inputClass} /></Field></div><AssetField usage="poster" title="Poster estático opcional" assetId={String(block.posterAssetId ?? "")} onPick={() => onPick(`block:${index}:poster`, ["image"])} /><p className="text-xs text-genesis-muted">O leitor público começa pelo poster e oferece controle para iniciar ou pausar a animação.</p></>;
+  if (block.type === "gif") return <><AssetField usage="gif" title="GIF animado" assetId={String(block.assetId ?? "")} mediaType="gif" posterAssetId={String(block.posterAssetId ?? "")} onPick={() => onPick(`block:${index}:gif`, ["gif"])} /><div className="grid gap-3 md:grid-cols-2"><Field label="Legenda (opcional)"><input maxLength={500} value={String(block.caption ?? "")} onChange={(event) => onChange({ ...block, caption: event.target.value })} className={inputClass} /></Field></div><AssetField usage="poster" title="Poster estático opcional" assetId={String(block.posterAssetId ?? "")} onPick={() => onPick(`block:${index}:poster`, ["image"])} /><p className="text-xs text-genesis-muted">O GIF é reproduzido automaticamente. A preferência de movimento reduzido do dispositivo é respeitada.</p></>;
   if (block.type === "quote") return <><Field label="Citação"><textarea required minLength={2} maxLength={1200} rows={3} value={String(block.text ?? "")} onChange={(event) => onChange({ ...block, text: event.target.value })} className={textareaClass} /></Field><Field label="Autoria pública (opcional)"><input maxLength={180} value={String(block.attribution ?? "")} onChange={(event) => onChange({ ...block, attribution: event.target.value })} className={inputClass} /></Field></>;
   return <p className="text-sm text-genesis-muted">Separador visual de seção; sem estilo arbitrário.</p>;
 }
 
-function AssetField({ title, usage, assetId, onPick, mediaType = "image", posterAssetId = "" }: { title: string; usage: FeedMediaUsage; assetId: string; onPick: () => void; mediaType?: FeedMediaType; posterAssetId?: string }) {
+function AssetField({ title, usage, assetId, onPick, mediaType = "image", posterAssetId = "", onEdited }: { onEdited?: (asset: EditorialMediaAsset) => void; title: string; usage: FeedMediaUsage; assetId: string; onPick: () => void; mediaType?: FeedMediaType; posterAssetId?: string }) {
   const preview = mediaType === "video"
     ? <PrivateVideoPreview assetId={assetId} posterAssetId={posterAssetId} className="mt-3 max-h-48 w-full rounded-md bg-black" />
     : mediaType === "gif"
       ? <PrivateGifPreview assetId={assetId} posterAssetId={posterAssetId} className="mt-3 max-h-48 w-full rounded-md bg-white object-contain" />
       : <AssetPreview assetId={assetId} className="mt-3 max-h-48 w-full rounded-md bg-white object-contain" />;
-  return <div className="rounded-lg border border-genesis-border bg-neutral-50 p-3"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-bold text-genesis-text">{title}</p><p className="mt-1 text-xs text-genesis-muted">{assetId ? `Arquivo selecionado · ${assetId.slice(0, 8)}…` : "Nenhuma mídia escolhida"}</p></div><Button type="button" variant="outline" size="sm" onClick={onPick}><ImagePlus size={15} />{assetId ? "Trocar" : "Escolher"}</Button></div><FeedMediaGuidance usage={usage} />{assetId && preview}</div>;
+  return <div className="rounded-lg border border-genesis-border bg-neutral-50 p-3"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-bold text-genesis-text">{title}</p><p className="mt-1 text-xs text-genesis-muted">{assetId ? `Arquivo selecionado · ${assetId.slice(0, 8)}…` : "Nenhuma mídia escolhida"}</p></div><Button type="button" variant="outline" size="sm" onClick={onPick}><ImagePlus size={15} />{assetId ? "Trocar" : "Escolher"}</Button></div><FeedMediaGuidance usage={usage} />{assetId && preview}{assetId && mediaType === "image" && onEdited && <EditImageButton assetId={assetId} usage={usage} onEdited={onEdited} />}</div>;
 }
 
 function AssetPreview({ assetId, className, alt = "Prévia privada da mídia" }: { assetId: string; className?: string; alt?: string }) {
@@ -313,13 +306,48 @@ function AssetPreview({ assetId, className, alt = "Prévia privada da mídia" }:
   return preview.data ? <img src={preview.data.url} alt={alt} className={className} /> : <div role="status" className={`grid place-items-center rounded-md bg-neutral-100 text-xs text-genesis-muted ${className ?? "aspect-[4/3]"}`}>{preview.isError ? "Prévia indisponível" : "Carregando prévia…"}</div>;
 }
 
+function EditImageButton({ assetId, usage, onEdited }: { assetId: string; usage: FeedMediaUsage; onEdited: (asset: EditorialMediaAsset) => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
+  const load = async () => {
+    setBusy(true);
+    try {
+      const preview = await api.getFeedAssetPreview(assetId);
+      const response = await fetch(preview.url, { credentials: "omit" });
+      if (!response.ok) throw new Error("Não foi possível abrir a imagem para edição.");
+      const blob = await response.blob();
+      if (blob.size > 10 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp", "image/avif"].includes(blob.type)) throw new Error("Escolha uma imagem estática de até 10 MB.");
+      setFile(new File([blob], `imagem-${assetId}.png`, { type: blob.type }));
+    } catch (cause) { toast.error(cause instanceof Error ? cause.message : "Não foi possível abrir a imagem."); }
+    finally { setBusy(false); }
+  };
+  const upload = async (edited: File) => {
+    setFile(null); setBusy(true);
+    try {
+      const asset = await api.uploadFeedAsset(edited, "image");
+      await queryClient.invalidateQueries({ queryKey: ["feed-assets"] });
+      onEdited(asset);
+      toast.success("Imagem editada e selecionada. Salve o rascunho para manter a alteração.");
+    } catch (cause) { toast.error(cause instanceof Error ? cause.message : "Não foi possível enviar a imagem."); }
+    finally { setBusy(false); }
+  };
+  return <><Button className="mt-3" variant="outline" size="sm" disabled={busy} onClick={() => void load()}>{busy ? "Preparando…" : "Editar imagem"}</Button>{file && <FeedImageEditor file={file} initialRatio={usage === "card" ? String(7 / 5) : usage === "opening" ? String(16 / 9) : "original"} onCancel={() => setFile(null)} onConfirm={(edited) => void upload(edited)} />}</>;
+}
+
 function PrivateGifPreview({ assetId, posterAssetId, className, alt = "Prévia privada animada" }: { assetId: string; posterAssetId: string; className?: string; alt?: string }) {
-  const [playing, setPlaying] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(preference.matches);
+    preference.addEventListener("change", update);
+    return () => preference.removeEventListener("change", update);
+  }, []);
   const preview = useQuery({ queryKey: ["feed-asset-preview", assetId], queryFn: () => api.getFeedAssetPreview(assetId), enabled: Boolean(assetId), staleTime: 180_000, refetchOnWindowFocus: false });
-  const poster = useQuery({ queryKey: ["feed-asset-preview", posterAssetId], queryFn: () => api.getFeedAssetPreview(posterAssetId), enabled: Boolean(posterAssetId), staleTime: 180_000, refetchOnWindowFocus: false });
-  if (!preview.data) return <div role="status" className={`grid aspect-video place-items-center rounded-md bg-neutral-100 text-xs text-genesis-muted ${className ?? ""}`}>{preview.isError ? "Prévia indisponível" : "Carregando prévia…"}</div>;
-  const posterUrl = poster.data?.url ?? preview.data.posterUrl;
-  return <div><div className="grid min-h-28 place-items-center overflow-hidden bg-neutral-100">{playing ? <img src={preview.data.url} alt={alt} className={className} /> : posterUrl ? <img src={posterUrl} alt="Poster estático do GIF" className={className} /> : <span className="p-4 text-xs text-genesis-muted">GIF pronto para reprodução</span>}</div><button type="button" aria-pressed={playing} onClick={() => setPlaying((value) => !value)} className="mt-2 min-h-9 rounded-full border border-genesis-border px-3 text-xs font-semibold text-genesis-text">{playing ? "Pausar animação" : "Reproduzir animação"}</button></div>;
+  const poster = useQuery({ queryKey: ["feed-asset-preview", posterAssetId], queryFn: () => api.getFeedAssetPreview(posterAssetId), enabled: Boolean(posterAssetId) && reducedMotion, staleTime: 180_000, refetchOnWindowFocus: false });
+  if (!preview.data) return <p role="status">{preview.isError ? "Prévia indisponível" : "Carregando prévia…"}</p>;
+  const source = reducedMotion ? poster.data?.url ?? preview.data.posterUrl : preview.data.url;
+  return source ? <img src={source} alt={alt} className={className} /> : <p className="p-4 text-sm text-genesis-muted">Animação desativada pela preferência de movimento reduzido do dispositivo.</p>;
 }
 
 function PrivateVideoPreview({ assetId, posterAssetId, className }: { assetId: string; posterAssetId: string; className?: string }) {
@@ -329,7 +357,7 @@ function PrivateVideoPreview({ assetId, posterAssetId, className }: { assetId: s
   return <video controls preload="none" poster={poster.data?.url} aria-label="Prévia privada do vídeo MP4" className={className}><source src={preview.data.url} type={preview.data.mimeType ?? "video/mp4"} /></video>;
 }
 
-function PrivateArticlePreview({ revision, categories }: { revision: EditorialRevisionInput; categories: Array<{ id: string; name: string; slug: string }> }) {
+export function PrivateArticlePreview({ revision, categories }: { revision: EditorialRevisionInput; categories: Array<{ id: string; name: string; slug: string }> }) {
   const category = categories.find((item) => item.id === revision.categoryId);
   return <article className="pb-10"><div className="bg-neutral-100"><AssetPreview assetId={revision.openingAssetId} className="mx-auto max-h-[60vh] w-full object-contain" /></div><header className="mx-auto max-w-3xl px-6 py-9"><p className="text-xs font-bold uppercase tracking-[0.18em] text-genesis-primary">{category?.name ?? "Rádio 88 FM"}</p><h1 className="mt-3 font-display text-3xl font-black leading-tight text-genesis-text sm:text-5xl">{revision.title || "Título da matéria"}</h1><p className="mt-4 text-lg leading-8 text-genesis-muted">{revision.excerpt}</p><p className="mt-4 text-xs uppercase tracking-wide text-genesis-muted">{revision.eventDate ? new Date(`${revision.eventDate}T12:00:00`).toLocaleDateString("pt-BR", { dateStyle: "long" }) : "Data do acontecimento não informada"}</p></header><div className="mx-auto max-w-5xl space-y-8 px-6"><p className="rounded bg-blue-50 p-3 text-center text-xs font-semibold text-blue-900">A prévia usa os mesmos tipos de bloco e metadados do conteúdo público.</p>{revision.blocks.map((block) => <PreviewBlock key={block.id} block={block} />)}</div></article>;
 }
@@ -382,10 +410,6 @@ function PreviewRichText({ value }: { value: unknown }) {
   if (node.type === "blockquote") return <blockquote>{children}</blockquote>;
   if (node.type === "doc") return <>{children}</>;
   return null;
-}
-
-function FocusControls({ label, x, y, onChange }: { label: string; x: number; y: number; onChange: (x: number, y: number) => void }) {
-  return <fieldset className="grid grid-cols-2 gap-2"><legend className="mb-1 text-xs font-bold text-genesis-muted">{label} (%)</legend><label className="text-xs text-genesis-muted">Horizontal<input type="range" min="0" max="100" value={x} onChange={(event) => onChange(Number(event.target.value), y)} className="mt-1 block w-full accent-genesis-primary" /></label><label className="text-xs text-genesis-muted">Vertical<input type="range" min="0" max="100" value={y} onChange={(event) => onChange(x, Number(event.target.value))} className="mt-1 block w-full accent-genesis-primary" /></label></fieldset>;
 }
 
 function BlockMenu({ onAdd }: { onAdd: (type: EditorialBlock["type"]) => void }) { return <details className="relative"><summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-md bg-genesis-primary px-4 text-sm font-semibold text-white"><Plus size={16} /> Inserir bloco <ChevronDown size={15} /></summary><div className="absolute right-0 z-10 mt-2 grid min-w-48 gap-1 rounded-lg border border-genesis-border bg-white p-2 shadow-panel">{(["text", "image", "gallery", "video", "gif", "quote", "divider"] as const).map((type) => <button key={type} type="button" onClick={() => onAdd(type)} className="rounded px-3 py-2 text-left text-sm font-semibold text-genesis-text hover:bg-neutral-100">{blockLabel(type)}</button>)}</div></details>; }

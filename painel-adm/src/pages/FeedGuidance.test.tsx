@@ -50,6 +50,9 @@ function addBlock(name: string) {
 describe("orientações editoriais de mídia do Feed", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    URL.createObjectURL = vi.fn(() => "blob:test-image");
+    URL.revokeObjectURL = vi.fn();
     vi.mocked(api.listFeedCategories).mockResolvedValue({ items: [{ id: "news", name: "Notícias", slug: "noticias", active: true }] });
     vi.mocked(api.listFeedAssets).mockResolvedValue({ items: [legacyAsset], page: 1, pageSize: 50 });
     vi.mocked(api.getFeedAssetPreview).mockResolvedValue({ url: "/legacy.jpg", expiresInSeconds: 60 });
@@ -64,12 +67,15 @@ describe("orientações editoriais de mídia do Feed", () => {
     expect(screen.getByLabelText(/Data do acontecimento/)).toHaveAttribute("type", "date");
     expect(screen.getByText(/filtro por ano.*ordenação por data do acontecimento.*Sem data/)).toBeInTheDocument();
     expect(screen.queryByText(/não altera a ordem de publicação/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Descrição acessível/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Foco da capa|Foco da abertura/)).not.toBeInTheDocument();
   });
 
   it("orienta imagens do corpo e galerias ainda vazias, preservando a imagem inteira", () => {
     renderFeed(<FeedEditorPage />);
     addBlock("Imagem");
     addBlock("Galeria");
+    expect(screen.queryByLabelText("Texto alternativo")).not.toBeInTheDocument();
     expect(screen.getAllByText(/corpo ou galeria.*1920 px de largura.*imagem inteira, sem cortes ou distorções/)).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Adicionar imagem" })).toBeEnabled();
   });
@@ -106,6 +112,9 @@ describe("orientações editoriais de mídia do Feed", () => {
     const file = new File(["original"], "imagem-menor.jpg", { type: "image/jpeg" });
     const input = baseElement.querySelector<HTMLInputElement>('input[type="file"]')!;
     fireEvent.change(input, { target: { files: [file] } });
+    expect(await screen.findByRole("heading", { name: "Editar imagem" })).toBeInTheDocument();
+    expect(api.uploadFeedAsset).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Enviar original" }));
     await waitFor(() => expect(api.uploadFeedAsset).toHaveBeenCalledWith(file, "image", expect.any(Function), expect.any(AbortSignal)));
   });
 });

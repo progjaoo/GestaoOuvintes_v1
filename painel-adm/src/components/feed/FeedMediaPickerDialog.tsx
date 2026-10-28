@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { FeedMediaGuidance } from "@/components/feed/FeedMediaGuidance";
+import { FeedImageEditor } from "@/components/feed/FeedImageEditor";
 import { api, ApiError } from "@/services/api";
 import type { EditorialMediaAsset } from "@/types/feed";
 
@@ -35,6 +36,7 @@ export function FeedMediaPickerDialog({
   const uploadController = useRef<AbortController | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadingName, setUploadingName] = useState("");
+  const [editingFile, setEditingFile] = useState<File | null>(null);
   const assets = useQuery({
     queryKey: ["feed-assets", allowedTypes.join(",")],
     queryFn: () => api.listFeedAssets({ page: 1, pageSize: 50 }),
@@ -66,10 +68,11 @@ export function FeedMediaPickerDialog({
   const visible = (assets.data?.items ?? []).filter((asset) => allowedTypes.includes(asset.mediaType));
 
   return (
-    <Dialog
+    <><Dialog
       open={open}
       onOpenChange={(next) => {
         if (!next && upload.isPending) uploadController.current?.abort();
+        if (!next) setEditingFile(null);
         onOpenChange(next);
       }}
       title="Biblioteca de mídia"
@@ -85,7 +88,16 @@ export function FeedMediaPickerDialog({
             <div className="mt-3"><FeedMediaGuidance /></div>
           </div>
           <div className="flex shrink-0 gap-2">
-            <input ref={inputRef} type="file" accept={allowedTypes.map((type) => accepts[type]).join(",")} className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) upload.mutate(file); event.currentTarget.value = ""; }} />
+            <input ref={inputRef} type="file" accept={allowedTypes.map((type) => accepts[type]).join(",")} className="sr-only" onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                if (mediaTypeFor(file) === "image" && allowedTypes.includes("image")) {
+                  if (file.size > 10 * 1024 * 1024) toast.error("Escolha uma imagem de até 10 MB.");
+                  else setEditingFile(file);
+                } else upload.mutate(file);
+              }
+              event.currentTarget.value = "";
+            }} />
             <Button onClick={() => inputRef.current?.click()} disabled={upload.isPending}><Upload size={16} /> Enviar mídia</Button>
             {upload.isPending && <Button variant="outline" onClick={() => uploadController.current?.abort()}><X size={16} /> Cancelar</Button>}
           </div>
@@ -109,7 +121,7 @@ export function FeedMediaPickerDialog({
           </div>
         )}
       </div>
-    </Dialog>
+    </Dialog>{open && editingFile && <FeedImageEditor file={editingFile} onCancel={() => setEditingFile(null)} onConfirm={(file) => { setEditingFile(null); upload.mutate(file); }} />}</>
   );
 }
 
