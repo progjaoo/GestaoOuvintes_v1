@@ -393,6 +393,9 @@ export const api = {
   getFeedAssetPreview(id: string) {
     return request<EditorialMediaPreview>(`/api/admin/feed/assets/${id}/preview`);
   },
+  getCurrentFeedRelease() {
+    return request<{ release: { id: string; status: string } | null }>("/api/admin/feed/releases/current");
+  },
 
   publishFeedPost(postId: string, revisionId: string) {
     const idempotencyKey = crypto.randomUUID();

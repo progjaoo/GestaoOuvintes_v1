@@ -10,6 +10,7 @@ import { RichTextBlockEditor } from "@/components/feed/RichTextBlockEditor";
 import { Button } from "@/components/ui/Button";
 import { FeedImageEditor } from "@/components/feed/FeedImageEditor";
 import { prepareFeedRevision } from "@/services/feed-revision";
+import { feedErrorMessage, validateFeedBlocks } from "@/services/feed-errors";
 import { openFeedPreview } from "@/services/feed-preview-channel";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { api, ApiError } from "@/services/api";
@@ -40,6 +41,9 @@ export function FeedEditorPage() {
   const [saved, setSaved] = useState<{ postId: string; revisionId: string; revisionNumber: number } | null>(null);
   const [releaseId, setReleaseId] = useState("");
   const [releaseStatus, setReleaseStatus] = useState("");
+  const currentRelease = useQuery({ queryKey: ["feed-release-current"], queryFn: api.getCurrentFeedRelease, refetchOnWindowFocus: false, retry: false });
+  const visibleReleaseId = releaseId || currentRelease.data?.release?.id || "";
+  const visibleReleaseStatus = releaseId ? releaseStatus : currentRelease.data?.release?.status ?? "";
 
   useEffect(() => {
     if (!editing || !id || !postQuery.data || loadedId === id) return;
@@ -97,7 +101,7 @@ export function FeedEditorPage() {
       await Promise.all([queryClient.invalidateQueries({ queryKey: ["feed-posts"] }), queryClient.invalidateQueries({ queryKey: ["feed-post", result.id] })]);
       if (!editing) navigate(`/conteudo/feed/${result.id}/editar`, { replace: true });
     },
-    onError: (error) => toast.error(error instanceof ApiError ? error.message : error.message || "Não foi possível salvar o rascunho."),
+    onError: (error) => toast.error(feedErrorMessage(error)),
   });
   const publish = useMutation({
     mutationFn: () => {
@@ -110,12 +114,19 @@ export function FeedEditorPage() {
       toast.success("Release criada. O conteúdo ainda não está publicado até o site confirmar o deploy.");
       void queryClient.invalidateQueries({ queryKey: ["feed-posts"] });
     },
-    onError: (error) => toast.error(error instanceof ApiError ? error.message : error.message || "Não foi possível iniciar a publicação."),
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === "FEED_RELEASE_IN_PROGRESS" && typeof error.details?.releaseId === "string") {
+        setReleaseId(error.details.releaseId);
+        setReleaseStatus(String(error.details.status ?? "awaiting_confirmation"));
+      }
+      toast.error(feedErrorMessage(error));
+    },
   });
   const checkRelease = useMutation({
-    mutationFn: () => api.checkFeedRelease(releaseId),
+    mutationFn: () => api.checkFeedRelease(visibleReleaseId),
     onSuccess: async (result) => {
       setReleaseStatus(result.status);
+      setReleaseId(visibleReleaseId);
       toast[result.live ? "success" : "info"](result.live ? "O site confirmou esta release." : `O site ainda não confirmou. Situação: ${result.status}.`);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["feed-posts"] }),
@@ -125,7 +136,7 @@ export function FeedEditorPage() {
     onError: (error) => toast.error(error instanceof ApiError ? error.message : "Não foi possível consultar a publicação."),
   });
   const retryRelease = useMutation({
-    mutationFn: () => api.retryFeedRelease(releaseId),
+    mutationFn: () => api.retryFeedRelease(visibleReleaseId),
     onSuccess: (result) => { setReleaseId(result.releaseId); setReleaseStatus(result.status); toast.success("Tentativa de publicação retomada."); },
     onError: (error) => toast.error(error instanceof ApiError ? error.message : "Não foi possível retomar a publicação."),
   });
@@ -196,6 +207,7 @@ export function FeedEditorPage() {
       <PageHeader eyebrow="Conteúdo editorial · Feed" title={editing ? "Editar matéria" : "Nova matéria"} description={currentPost?.status === "published" ? "Edite uma nova revisão sem alterar o conteúdo que está no ar até concluir outra publicação." : "Monte uma narrativa visual com imagem de abertura, texto, galerias, vídeos e GIFs."} actions={<Button variant="outline" onClick={onBack}><ArrowLeft size={16} /> Voltar à lista</Button>} />
       {isArchived && <div role="alert" className="rounded-lg border border-neutral-300 bg-neutral-100 p-4 text-sm text-neutral-700">Esta matéria está arquivada e não pode ser editada. O histórico permanece preservado.</div>}
 
+      {save.error && <div role="alert" className="whitespace-pre-line rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{feedErrorMessage(save.error)}</div>}
       <form onSubmit={(event) => { event.preventDefault(); save.mutate(); }} className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
         <div className="space-y-5">
           <section className="rounded-xl border border-genesis-border bg-white p-4 shadow-sm sm:p-6">
@@ -245,12 +257,12 @@ export function FeedEditorPage() {
             <div className="mt-4 flex flex-col gap-2">
               <Button type="submit" disabled={!canSubmit || categories.isLoading || !revision.coverAssetId || !revision.openingAssetId}><Save size={16} />{save.isPending ? "Salvando…" : "Salvar rascunho"}</Button>
               <Button variant="outline" type="button" onClick={() => { if (!openFeedPreview({ revision: prepareFeedRevision(effectiveRevision), categories: categories.data?.items ?? [] })) toast.error("Permita abrir novas abas para visualizar a matéria."); }} disabled={!revision.title || !revision.openingAssetId}><Eye size={16} /> Pré-visualizar</Button>
-              <Button variant="secondary" type="button" disabled={!saved || !revision.blocks.length || publish.isPending || currentPost?.status === "archived"} onClick={() => { if (saved && window.confirm("Gerar uma release editorial e iniciar o build do site?")) publish.mutate(); }}><Send size={16} />Solicitar publicação</Button>
+              <Button variant="secondary" type="button" disabled={dirty || !saved || !revision.blocks.length || publish.isPending || currentPost?.status === "archived"} onClick={() => { if (saved && window.confirm("Gerar uma release editorial e iniciar o build do site?")) publish.mutate(); }}><Send size={16} />Solicitar publicação</Button>
             </div>
             {dirty && <p className="mt-3 rounded-md bg-amber-50 p-2.5 text-xs font-semibold text-amber-800">Há alterações ainda não salvas.</p>}
             {saved && <p className="mt-3 flex items-center gap-2 text-xs text-emerald-700"><Check size={15} /> Revisão {saved.revisionNumber} salva</p>}
           </section>
-          {releaseId && <section className="rounded-xl border border-genesis-border bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-genesis-muted">Publicação · {releaseStatusLabel(releaseStatus)}</p><p className="mt-2 text-sm leading-6 text-genesis-muted">A publicação ainda não é considerada concluída até o site responder com o marcador desta release.</p><div className="mt-3 grid gap-2"><Button variant="outline" type="button" disabled={checkRelease.isPending} onClick={() => checkRelease.mutate()}>{checkRelease.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <RefreshCwIcon />} Atualizar situação</Button>{releaseStatus === "failed" && <Button variant="outline" type="button" disabled={retryRelease.isPending} onClick={() => retryRelease.mutate()}>{retryRelease.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <RefreshCw size={16} />} Tentar novamente</Button>}</div></section>}
+          {visibleReleaseId && <section className="rounded-xl border border-genesis-border bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-genesis-muted">Publicação · {releaseStatusLabel(visibleReleaseStatus)}</p><p className="mt-2 text-sm leading-6 text-genesis-muted">A publicação ainda não é considerada concluída até o site responder com o marcador desta release.</p><div className="mt-3 grid gap-2"><Button variant="outline" type="button" disabled={checkRelease.isPending} onClick={() => checkRelease.mutate()}>{checkRelease.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <RefreshCwIcon />} Atualizar situação</Button>{["failed", "awaiting_confirmation", "building"].includes(visibleReleaseStatus) && <Button variant="outline" type="button" disabled={retryRelease.isPending} onClick={() => retryRelease.mutate()}>{retryRelease.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <RefreshCw size={16} />} Tentar novamente</Button>}</div></section>}
           <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><strong>Privacidade de Preview</strong><p className="mt-1">Os arquivos novos ficam no bucket privado até você solicitar a publicação. Ao publicar, as mídias aprovadas passam a ser públicas no R2.</p></section>
         </aside>
       </form>
@@ -423,6 +435,7 @@ const smallSelect = "ml-2 min-h-9 rounded-md border border-genesis-border bg-whi
 const iconButtonClass = "grid h-8 w-8 place-items-center rounded text-genesis-muted hover:bg-white hover:text-genesis-text disabled:opacity-35";
 
 function validateRevision(input: EditorialRevisionInput): EditorialRevisionInput {
+  validateFeedBlocks(input.blocks);
   if (!input.coverAssetId || !input.openingAssetId) throw new Error("Escolha as imagens de capa e de abertura.");
   if (!input.categoryId) throw new Error("Escolha uma categoria ativa.");
   if (input.blocks.some((block) => block.type === "gallery" && (!Array.isArray(block.items) || block.items.length < 2))) throw new Error("Cada galeria precisa ter pelo menos duas imagens.");

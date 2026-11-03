@@ -468,3 +468,20 @@ describe("editorial release failure recovery", () => {
     }
   });
 });
+
+describe("reconciliation when an editor returns after a deploy", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  it.each(["match", "mismatch", "unavailable"])("only confirms an exact marker: %s", async (outcome) => {
+    const flow = setupReleaseFlow("awaiting_confirmation");
+    const query = mocks.query.getMockImplementation()!;
+    mocks.query.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes("WHERE namespace=$1 AND status IN") && sql.includes("LIMIT 1")) return { rowCount: 1, rows: [flow.release] };
+      return query(sql, values);
+    });
+    if (outcome === "match") flow.marker.mockResolvedValue({ ok: true, status: 200, json: async () => flow.markerFor(flow.release) });
+    if (outcome === "unavailable") flow.marker.mockRejectedValue(new Error("offline"));
+    await requestEditorialRelease(requestInput);
+    expect(flow.release.status).toBe(outcome === "match" ? "live" : "awaiting_confirmation");
+    expect(flow.hook).not.toHaveBeenCalled();
+  });
+});

@@ -73,3 +73,9 @@ O release de producao exige aprovacao separada, migrations revisadas no destino 
 - GIF inicia automaticamente sem botao de reproducao; a preferencia de movimento reduzido do dispositivo continua respeitada com poster estatico.
 - O institucional apresenta Post Anterior / Proximo Post no fim da materia, na mesma ordem global por Data do acontecimento do Feed (recentes primeiro, desempate por slug, sem data por ultimo). Extremos ficam desabilitados, sem retorno circular ao inicio nem consultas a API/Neon.
 - Atualizar a mesma branch Preview preserva os aliases ja enviados ao designer. A URL unica de cada deploy muda, mas o alias de branch nao. Nao promover Preview a Production.
+
+## Recuperacao editorial - 03/11/2026
+
+Uma release de 28/10 estava awaiting_confirmation embora o marcador do site ja correspondesse a ela. O check autenticado confirmou essa release sem apagar travas ou rascunhos. Agora a API reconcilia automaticamente uma release pendente pelo marcador exato antes de nova publicacao, sob o lock do namespace. Se o marcador estiver indisponivel/diferente, o bloqueio permanece e retorna releaseId/status para recuperacao manual.
+
+O editor recupera a ultima release pendente ao abrir (uma requisicao, sem polling), permite conferir/retomar a mesma revisao e impede publicar alteracoes ainda nao salvas. Erros de validacao passam a indicar o campo/bloco em alerta persistente, preservando o formulario. Blocos de imagem/GIF/galeria/video incompletos sao identificados antes do envio. Nao foi relaxada a validacao do servidor nem criada migration.

@@ -17,7 +17,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/services/api", () => ({
   ApiError: class extends Error {},
   api: {
-    listFeedCategories: vi.fn(), listFeedAssets: vi.fn(),
+    getCurrentFeedRelease: vi.fn().mockResolvedValue({ release: null }), listFeedCategories: vi.fn(), listFeedAssets: vi.fn(),
     getFeedAssetPreview: vi.fn(), uploadFeedAsset: vi.fn(),
   },
 }));

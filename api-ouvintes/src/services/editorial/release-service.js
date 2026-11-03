@@ -68,6 +68,17 @@ export async function requestEditorialRelease(input) {
     }
     const client = s3();
     return withEditorialLock(`feed-release:${env.FEED_NAMESPACE}`, async (db) => {
+        // A browser may have closed after the deploy succeeded. Reconcile only
+        // against the exact live marker, under the same namespace lock.
+        if (!input.retry) {
+            const active = await db.query("SELECT id, namespace, status, manifest_sha256, revision_ids, created_at, sequence FROM editorial_release WHERE namespace=$1 AND status IN ('preparing','building','awaiting_confirmation') ORDER BY sequence DESC LIMIT 1", [env.FEED_NAMESPACE]);
+            const pending = active.rows[0];
+            if (pending?.manifest_sha256 && ["building", "awaiting_confirmation"].includes(pending.status)) {
+                let marker = null;
+                try { marker = await readReleaseMarker(); } catch { /* An unavailable marker never unlocks a release. */ }
+                if (matchesReleaseMarker(marker, pending)) await confirmEditorialRelease(db, pending);
+            }
+        }
         let releaseId = "";
         let revisionIds = [];
         let generatedAt = "";
@@ -146,9 +157,9 @@ export async function requestEditorialRelease(input) {
                 if (operation === "archive" && (selected.rows[0].revision_id !== input.revisionId || selected.rows[0].published_revision_id === null)) {
                     throw new AppError(409, "FEED_POST_NOT_PUBLISHED", "Somente uma publicacao efetivamente ativa pode ser retirada do Feed.");
                 }
-                const ongoing = await db.query("SELECT id FROM editorial_release WHERE namespace=$1 AND status IN ('preparing','building','awaiting_confirmation') FOR UPDATE", [env.FEED_NAMESPACE]);
+                const ongoing = await db.query("SELECT id, status FROM editorial_release WHERE namespace=$1 AND status IN ('preparing','building','awaiting_confirmation') FOR UPDATE", [env.FEED_NAMESPACE]);
                 if (ongoing.rowCount)
-                    throw new AppError(409, "FEED_RELEASE_IN_PROGRESS", "Ja existe uma publicacao editorial em andamento.");
+                    throw new AppError(409, "FEED_RELEASE_IN_PROGRESS", "Ja existe uma publicacao editorial em andamento. Atualize a situacao para confirmar o deploy ou retomar a tentativa.", { releaseId: ongoing.rows[0].id, status: ongoing.rows[0].status });
                 releaseId = randomUUID();
                 const current = await db.query(`SELECT p.id AS post_id, p.slug, p.published_revision_id AS revision_id, p.first_published_at
          FROM editorial_post p WHERE p.status='published' AND p.archived_at IS NULL AND p.id<>$1`, [input.postId]);
@@ -407,4 +418,8 @@ export async function getEditorialRelease(id) {
     if (!result.rowCount)
         throw new AppError(404, "FEED_RELEASE_NOT_FOUND", "Release nao encontrada.");
     return result.rows[0];
+}
+export async function getCurrentEditorialRelease() {
+    const result = await pool.query("SELECT id, status, error_code FROM editorial_release WHERE namespace=$1 ORDER BY sequence DESC LIMIT 1", [env.FEED_NAMESPACE]);
+    return result.rows[0]?.status === "live" ? null : result.rows[0] ?? null;
 }

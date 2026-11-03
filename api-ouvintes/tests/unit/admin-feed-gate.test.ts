@@ -23,6 +23,7 @@ vi.mock("../../src/services/editorial/media-service.js", () => ({
 vi.mock("../../src/services/editorial/release-service.js", () => ({
   checkEditorialRelease: mocks.service,
   getEditorialRelease: mocks.service,
+  getCurrentEditorialRelease: mocks.service,
   requestEditorialRelease: mocks.service,
   retryEditorialRelease: mocks.service,
 }));
@@ -52,6 +53,7 @@ const routes = [
   { method: "GET", path: `/assets/${id}/preview` },
   { method: "POST", path: `/posts/${id}/publish` },
   { method: "POST", path: `/posts/${id}/archive` },
+  { method: "GET", path: "/releases/current" },
   { method: "GET", path: `/releases/${id}` },
   { method: "POST", path: `/releases/${id}/check` },
   { method: "POST", path: `/releases/${id}/retry` },

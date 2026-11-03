@@ -3,7 +3,7 @@ import { env } from "../config/env.js";
 import { requireAuthentication, requirePermission } from "../plugins/auth.js";
 import { editorialCategorySchema, editorialIdParamsSchema, editorialListQuerySchema, editorialMediaQuerySchema, editorialSaveSchema, editorialUploadSchema, editorialPublishSchema, } from "../schemas/editorial.js";
 import { completeEditorialUpload, createEditorialUpload, getEditorialMediaPreview, listEditorialMedia } from "../services/editorial/media-service.js";
-import { checkEditorialRelease, getEditorialRelease, requestEditorialRelease, retryEditorialRelease } from "../services/editorial/release-service.js";
+import { checkEditorialRelease, getCurrentEditorialRelease, getEditorialRelease, requestEditorialRelease, retryEditorialRelease } from "../services/editorial/release-service.js";
 import { createEditorialCategory, getEditorialPost, listEditorialCategories, listEditorialPosts, saveEditorialDraft, updateEditorialCategory, } from "../services/editorial/post-service.js";
 export const adminFeedRoutes = async (app) => {
     app.addHook("onRequest", async (_request, reply) => {
@@ -82,6 +82,7 @@ export const adminFeedRoutes = async (app) => {
         const result = await requestEditorialRelease({ postId: id, revisionId: input.revisionId, idempotencyKey: input.idempotencyKey, adminUserId: request.user.sub, operation: "archive" });
         return reply.code(202).send(result);
     });
+    app.get("/releases/current", { preHandler: canRead }, async () => ({ release: await getCurrentEditorialRelease() }));
     app.get("/releases/:id", { preHandler: canRead }, async (request) => {
         const { id } = editorialIdParamsSchema.parse(request.params);
         return getEditorialRelease(id);
