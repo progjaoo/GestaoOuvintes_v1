@@ -30,6 +30,8 @@ function toPost(row) {
             seoDescription: revision.seoDescription ?? revision.seo_description,
             eventDate: revision.eventDate ?? revision.event_date ?? null,
             publicCredits: revision.publicCredits ?? revision.public_credits ?? "",
+            promoCtaText: revision.promoCtaText ?? revision.promo_cta_text ?? "Anuncie sua marca na Rádio 88 FM",
+            promoCtaUrl: revision.promoCtaUrl ?? revision.promo_cta_url ?? "/anuncie",
             createdAt: revision.createdAt ?? revision.created_at,
         };
     };
@@ -50,7 +52,7 @@ const revisionSelect = `
   r.id, r.revision_number, r.schema_version, r.title, r.excerpt, r.cover_asset_id,
   r.cover_alt, r.cover_focus_x, r.cover_focus_y, r.opening_asset_id, r.opening_alt,
   r.opening_focus_x, r.opening_focus_y, r.blocks, r.category_snapshot,
-  r.seo_title, r.seo_description, r.event_date, r.public_credits, r.created_at`;
+  r.seo_title, r.seo_description, r.event_date, r.public_credits, r.promo_cta_text, r.promo_cta_url, r.created_at`;
 export async function listEditorialCategories() {
     const result = await pool.query(`SELECT id, name, slug, active, created_at, updated_at
      FROM editorial_category ORDER BY name ASC, id ASC`);
@@ -174,14 +176,16 @@ export async function saveEditorialDraft(input) {
           post_id, revision_number, title, excerpt, cover_asset_id, cover_alt, cover_focus_x,
           cover_focus_y, opening_asset_id, opening_alt, opening_focus_x, opening_focus_y,
           blocks, category_snapshot, seo_title, seo_description, event_date,
-          public_credits, created_by_admin_user_id
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15,$16,$17,$18,$19)
+          public_credits, promo_cta_text, promo_cta_url, created_by_admin_user_id
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15,$16,$17,$18,$19,$20,$21)
         RETURNING id`, [postId, revisionNumber, input.revision.title, input.revision.excerpt, input.revision.coverAssetId,
                 input.revision.coverAlt, input.revision.coverFocusX, input.revision.coverFocusY,
                 openingAssetId, openingAlt, input.revision.openingFocusX ?? 50, input.revision.openingFocusY ?? 50,
                 JSON.stringify(input.revision.blocks), JSON.stringify({ id: category.rows[0].id, name: category.rows[0].name, slug: category.rows[0].slug }),
                 input.revision.seoTitle, input.revision.seoDescription, input.revision.eventDate,
-                input.revision.publicCredits || null, input.adminUserId]);
+                input.revision.publicCredits || null,
+                input.revision.promoCtaText?.trim() || "Anuncie sua marca na Rádio 88 FM",
+                input.revision.promoCtaUrl?.trim() || "/anuncie", input.adminUserId]);
             const revisionId = inserted.rows[0].id;
             const assets = extractEditorialAssetIds(input.revision);
             for (const assetId of assets) {

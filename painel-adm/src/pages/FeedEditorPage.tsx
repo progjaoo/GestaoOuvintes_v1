@@ -20,7 +20,7 @@ const emptyDoc = { type: "doc", content: [{ type: "paragraph" }] };
 const blankRevision = (): EditorialRevisionInput => ({
   title: "", excerpt: "", slug: "", categoryId: "", coverAssetId: "", coverAlt: "", coverFocusX: 50, coverFocusY: 50,
   openingAssetId: "", openingAlt: "", openingFocusX: 50, openingFocusY: 50,
-  seoTitle: "", seoDescription: "", eventDate: null, publicCredits: "", blocks: [],
+  seoTitle: "", seoDescription: "", eventDate: null, publicCredits: "", promoCtaText: "Anuncie sua marca na Rádio 88 FM", promoCtaUrl: "/anuncie", blocks: [],
 });
 
 export function FeedEditorPage() {
@@ -69,6 +69,8 @@ export function FeedEditorPage() {
         seoDescription: source.seoDescription ?? source.excerpt.slice(0, 180),
         eventDate: source.eventDate ?? null,
         publicCredits: source.publicCredits ?? "",
+        promoCtaText: source.promoCtaText ?? "Anuncie sua marca na Rádio 88 FM",
+        promoCtaUrl: source.promoCtaUrl ?? "/anuncie",
         blocks: source.blocks ?? [],
       });
       setExpectedVersion(source.revisionNumber);
@@ -245,6 +247,7 @@ export function FeedEditorPage() {
               <Field label="Título SEO (máx. 70 caracteres)"><input required minLength={3} maxLength={70} value={revision.seoTitle} onChange={(event) => update("seoTitle", event.target.value)} className={inputClass} /></Field>
               <Field label="Descrição SEO (20 a 180 caracteres)"><textarea required minLength={20} maxLength={180} rows={3} value={revision.seoDescription} onChange={(event) => update("seoDescription", event.target.value)} className={textareaClass} /></Field>
               <Field label="Crédito público (opcional)"><input maxLength={500} value={revision.publicCredits} onChange={(event) => update("publicCredits", event.target.value)} className={inputClass} placeholder="Ex.: Fotos: equipe Rádio 88 FM" /></Field>
+              <div className="md:col-span-2 rounded-xl border border-neutral-200 p-4"><p className="font-display font-bold">Chamada comercial (opcional)</p><p className="mt-1 text-sm text-neutral-600">Exibida abaixo de “Continue por aqui” na matéria publicada.</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><Field label="Texto do botão"><input maxLength={100} value={revision.promoCtaText} onChange={(event) => update("promoCtaText", event.target.value)} className={inputClass} /></Field><Field label="Destino"><input maxLength={500} value={revision.promoCtaUrl} onChange={(event) => update("promoCtaUrl", event.target.value)} className={inputClass} placeholder="/anuncie ou https://..." /></Field></div></div>
             </div>
           </details>
         </div>

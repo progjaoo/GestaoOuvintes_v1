@@ -76,3 +76,11 @@ O modal `SweepstakeDrawDialog`:
 - revela nome, cidade, bairro e telefone do vencedor;
 - permite ressorteio confirmado, preservando o resultado anterior;
 - respeita `prefers-reduced-motion` e bloqueia fechamento durante a apuracao.
+
+## Editor do Feed
+
+Cada revisao pode configurar a chamada comercial mostrada no institucional
+abaixo de “Continue por aqui”: texto do botao e destino. Por padrao, o texto e
+`Anuncie sua marca na Radio 88 FM` e o destino e `/anuncie`. Rascunho e
+publicacao seguem o fluxo editorial normal; alterar o editor nao muda o post
+publico ate que uma release seja confirmada.

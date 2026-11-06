@@ -40,6 +40,8 @@ export interface EditorialRevision {
   seoDescription: string;
   eventDate: string | null;
   publicCredits: string;
+  promoCtaText: string;
+  promoCtaUrl: string;
 }
 
 export interface EditorialPost {
@@ -83,6 +85,8 @@ export interface EditorialRevisionInput {
   seoDescription: string;
   eventDate: string | null;
   publicCredits: string;
+  promoCtaText: string;
+  promoCtaUrl: string;
   blocks: EditorialBlock[];
 }
 

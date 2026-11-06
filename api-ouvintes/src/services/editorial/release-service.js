@@ -146,7 +146,7 @@ export async function requestEditorialRelease(input) {
             else {
                 const selected = await db.query(`SELECT p.id AS post_id, r.id AS revision_id, p.slug, p.published_revision_id, r.revision_number, r.title, r.excerpt,
             r.cover_asset_id, r.cover_alt, r.cover_focus_x, r.cover_focus_y, r.blocks,
-            r.category_snapshot, r.seo_title, r.seo_description, r.event_date, r.public_credits,
+            r.category_snapshot, r.seo_title, r.seo_description, r.event_date, r.public_credits, r.promo_cta_text, r.promo_cta_url,
             COALESCE(p.first_published_at, now()) AS published_at
            FROM editorial_post p JOIN editorial_revision r ON r.id = $2 AND r.post_id=p.id
            WHERE p.id=$1 AND (p.draft_revision_id=$2 OR p.published_revision_id=$2) AND p.status <> 'archived'
@@ -186,7 +186,7 @@ export async function requestEditorialRelease(input) {
           r.opening_asset_id, r.opening_alt, r.opening_focus_x, r.opening_focus_y,
           r.blocks, r.category_snapshot, r.seo_title, r.seo_description,
           to_char(r.event_date, 'YYYY-MM-DD') AS event_date,
-          r.public_credits, r.created_at AS revision_created_at
+          r.public_credits, r.promo_cta_text, r.promo_cta_url, r.created_at AS revision_created_at
          FROM editorial_post p JOIN editorial_revision r ON r.post_id=p.id
          WHERE r.id=ANY($1::uuid[])`, [revisionIds.filter((ref) => ref.operation !== "archive").map((ref) => ref.revisionId)]);
             const posts = current.rows.map((post) => {
@@ -291,6 +291,8 @@ export async function requestEditorialRelease(input) {
                 seoDescription: post.seo_description,
                 eventDate: post.event_date ?? null,
                 publicCredits: post.public_credits,
+                promoCtaText: post.promo_cta_text,
+                promoCtaUrl: post.promo_cta_url,
                 opening: {
                     ...publicMedia.get(String(post.opening_asset_id ?? post.cover_asset_id)),
                     alt: post.opening_alt ?? post.cover_alt,

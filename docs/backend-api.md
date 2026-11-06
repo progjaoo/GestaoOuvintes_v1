@@ -94,3 +94,13 @@ Endpoints autenticados, protegidos por RBAC e com resposta `Cache-Control: no-st
 - `POST /api/admin/sweepstakes/:campaignId/redraw`: cria nova apuracao preservando a anterior. Exige idempotency key e `previousDrawId`.
 
 O vencedor e escolhido no backend com `node:crypto.randomInt`, dentro de transacao com advisory lock por campanha. Campanhas precisam ser do tipo `sweepstake`, estar encerradas e nao possuir cadastros legados sem participacao.
+
+## Conteudo editorial do Feed
+
+As revisoes do CMS aceitam `promoCtaText` (ate 100 caracteres) e
+`promoCtaUrl` (caminho local ou URL HTTP/HTTPS), com defaults para a chamada
+comercial da Radio 88 FM. A validacao rejeita protocolos inseguros e URLs
+protocol-relative. Ao solicitar uma release, a API inclui esses campos no JSON
+imutavel do post publicado no R2; o institucional continua lendo a release
+estatica, sem consultar PostgreSQL por visita. O schema do banco e ampliado
+pela migration `0016_editorial_promo_cta.sql`.

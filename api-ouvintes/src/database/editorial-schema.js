@@ -66,6 +66,8 @@ export const editorialRevisions = pgTable("editorial_revision", {
     seoDescription: varchar("seo_description", { length: 180 }).notNull(),
     eventDate: date("event_date"),
     publicCredits: varchar("public_credits", { length: 500 }),
+    promoCtaText: varchar("promo_cta_text", { length: 100 }).notNull().default("Anuncie sua marca na Rádio 88 FM"),
+    promoCtaUrl: varchar("promo_cta_url", { length: 500 }).notNull().default("/anuncie"),
     createdByAdminUserId: uuid("created_by_admin_user_id").references(() => adminUsers.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex("editorial_revision_number_unique").on(table.postId, table.revisionNumber)]);

@@ -94,6 +94,15 @@ Teste descartavel: `npm run test:compat:legacy`, PostgreSQL 17 no compose
 `radio88_primary_banner_test`. Os scripts recusam outro destino e verificam
 a allowlist exata de migrations. Nenhum teste destrutivo usa o Neon.
 
+## CTA comercial por materia do Feed (Plan 052)
+
+A migration aditiva `0016_editorial_promo_cta.sql` acrescenta `promo_cta_text`
+e `promo_cta_url` a cada revisao editorial. Os defaults sao `Anuncie sua marca
+na Radio 88 FM` e `/anuncie`. O destino aceita caminho local iniciado por `/`
+(exceto `//`) ou URL HTTP/HTTPS. A migration foi aplicada somente no banco
+isolado Neon Preview `radio88_preview`, branch `br-rapid-unit-bdlk9tcs`;
+Production nao foi alterada.
+
 ## Sorteios auditaveis
 
 As migracoes de sorteio foram introduzidas em `0006_sweepstake_draws.sql`.

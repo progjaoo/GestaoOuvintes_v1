@@ -97,6 +97,13 @@ export const editorialRevisionSchema = z.object({
     seoDescription: z.string().trim().min(20).max(180),
     eventDate: z.iso.date().nullable().default(null),
     publicCredits: z.string().max(500).default(""),
+    promoCtaText: z.string().trim().max(100).default("Anuncie sua marca na Rádio 88 FM"),
+    promoCtaUrl: z.string().trim().max(500).default("/anuncie").superRefine((value, context) => {
+        if (!value) return;
+        if (value.startsWith("/") && !value.startsWith("//")) return;
+        try { const url = new URL(value); if (!["https:", "http:"].includes(url.protocol)) throw new Error(); }
+        catch { context.addIssue({ code: "custom", message: "Informe um caminho local ou URL HTTP/HTTPS." }); }
+    }),
     blocks: z.array(editorialBlockSchema).max(50),
 }).strict().superRefine((revision, context) => {
     for (const [index, block] of revision.blocks.entries()) {
