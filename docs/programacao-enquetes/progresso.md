@@ -83,3 +83,15 @@ Atualizado em 17/11/2026. **Etapa 1 implementada no ambiente local; aguardando a
 - Vercel ainda nao tem variaveis `GOOGLE_CALENDAR_*`, `CRON_SECRET` nem `RESEND_*` no ambiente de Preview/Producao. A producao tambem nao tem valores de `ADMIN_INITIAL_USERNAME/PASSWORD`; esse seed nao e um mecanismo de recuperacao de uma conta existente.
 - Proximos passos: configurar credenciais/flags somente no ambiente Preview, aplicar e conferir migrations 0024–0029 no banco isolado de Preview, provisionar/validar a identidade de teste e conectar a agenda read-only. Ativar o Cron apenas depois da conexao e da revisao do app OAuth.
 - **Producao inalterada:** nao houve deploy, merge, migration, provisionamento/reset de Super Admin, envio de e-mail ou escrita no Google Calendar. O login por e-mail/reset e a ativacao de OAuth em producao dependem de validar o Preview e de aprovacao explicita para o rollout.
+
+## Preview de login e Google Calendar (19/11/2026)
+
+- A branch `codex/preview-gestao-enquetes-programacao-20261118` foi publicada no GitHub no commit `05dee4f`; o Vercel iniciou a implantacao Preview da API.
+- Criado o branch Neon `codex-gestao-enquetes-programacao-preview-20261118` no projeto dedicado `gestao-ouvintes-feed-preview`, separado do projeto Neon de Producao. As migrations forward-only `0017`–`0029` foram aplicadas somente nessa copia isolada.
+- O Super Admin `joaomvprog@gmail.com` foi provisionado somente no banco isolado de Preview, com login `joaomprog-root`. A senha e unica e nao esta no repositorio nem neste documento; trocar apos validar o acesso.
+- Variaveis OAuth do Google Calendar, `CRON_SECRET`, chave de cifragem dos tokens e `DATABASE_URL` foram configuradas somente no ambiente Preview da branch. A agenda autorizada e exclusivamente `88 - ENQUETE` e a integracao permanece read-only; nenhum evento foi alterado.
+- O projeto do painel recebeu `VITE_CADASTROS_API_URL` com escopo Preview desta branch, apontando para a API Preview, para evitar que o painel de teste grave na API de Producao.
+- O callback OAuth Preview foi registrado no cliente Google correto. A tela de consentimento continua em modo **Testando**, com `producao88fm@gmail.com` como usuario de teste. O teste OAuth ainda depende da autenticacao dessa conta no navegador.
+- Corrigida a query do script de provisionamento raiz com casts explicitos no e-mail. O typecheck passou e o provisionamento isolado confirmou a identidade; o teste focado do Vitest ainda precisa ser repetido fora da restricao de escrita do cache local.
+- **Login de Producao identificado, sem reset:** o release atual continua no fluxo legado username/senha. O banco atual contem os identificadores ativos `admin` e `admin@radio88fm.com.br`; nao foi possivel obter senhas existentes (hashes nao sao recuperaveis). A identidade `joaomvprog@gmail.com` ainda nao existe nesse schema legado.
+- **Producao continua inalterada:** nenhum env de Producao foi criado/alterado, nenhum deploy/merge para `main`, migration, reset de senha ou envio de e-mail foi feito. Validar login e OAuth no Preview antes de preparar a ativacao de Producao.

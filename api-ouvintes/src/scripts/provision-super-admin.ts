@@ -72,7 +72,7 @@ async function main() {
       `INSERT INTO admin_user
          (name, username, password_hash, role, active, email, email_normalized,
           is_super_admin, must_change_password, password_changed_at)
-       VALUES ('Super Admin', $1, $2, 'admin', true, $3, lower($3), true, false, now())
+       VALUES ('Super Admin', $1, $2, 'admin', true, $3::varchar(320), lower($3::varchar(320)), true, false, now())
        RETURNING id`,
       [ROOT_USERNAME, passwordHash, ROOT_EMAIL],
     );
