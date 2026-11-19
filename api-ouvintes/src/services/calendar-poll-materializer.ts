@@ -49,7 +49,8 @@ export function createCalendarPollMaterializer(db: Pool) {
         AND (st.state IN ('canceled','invalid') OR (st.state='review' AND
           (l.poll_id IS NULL OR st.content_hash IS DISTINCT FROM l.content_hash OR l.external_state<>'active')))
         AND (st.state<>'review' OR (st.payload#>>'{poll,endsAt}')::timestamptz>clock_timestamp())
-      ORDER BY st.updated_at ASC LIMIT 500`, [RADIO, sourceId]);
+      ORDER BY CASE WHEN st.state='canceled' THEN 0 WHEN st.state='review' THEN 1 ELSE 2 END,
+        (st.payload#>>'{poll,startsAt}')::timestamptz ASC NULLS LAST,st.updated_at ASC,st.id ASC LIMIT 500`, [RADIO, sourceId]);
 
     const linked = await db.query(`SELECT count(*)::int AS count
       FROM radio_calendar_event_stage st

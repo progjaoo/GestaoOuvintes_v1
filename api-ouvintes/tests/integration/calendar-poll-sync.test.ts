@@ -65,9 +65,14 @@ suite('Google Calendar sync - disposable PostgreSQL only', () => {
     });
     const sync = createCalendarPollSync(db,oauth,calendarId,fetcher);
 
+    // A large invalid historical backlog must not starve valid all-day polls.
+    await db.query(`INSERT INTO radio_calendar_event_stage(radio_key,source_id,event_id,state,content_hash,reason,updated_at)
+      SELECT 'radio-88',$1,'historical-'||n,'invalid',repeat('0',64),'INVALID_POLL',now()-interval '2 days'
+      FROM generate_series(1,501) n`,[source.id]);
     const result = await sync.sync(ctx,source.id);
     expect(result).toMatchObject({ scanned:4,changed:4,pending:2,canceled:0,skippedPast:0,parserRevisionRescan:true,
-      publication:{scheduled:2,alreadyLinked:0,canceled:0,needsReview:2,failed:0},reviewRequired:true,readOnly:true });
+      publication:{scheduled:2,alreadyLinked:0,canceled:0,needsReview:498,failed:0},reviewRequired:true,readOnly:true });
+    await db.query("DELETE FROM radio_calendar_event_stage WHERE source_id=$1 AND event_id LIKE 'historical-%'",[source.id]);
     const staged = await store.list(ctx,source.id);
     expect(staged.items).toHaveLength(4);
     expect(staged.items.find(item=>item.eventId==='past-event')?.state).toBe('invalid');
@@ -84,7 +89,7 @@ suite('Google Calendar sync - disposable PostgreSQL only', () => {
     const expired = await sync.sync(ctx,source.id);
     expect(expired).toMatchObject({ scanned:0,fullSyncRequired:true,readOnly:true });
     expect((await db.query('SELECT sync_token FROM radio_calendar_source WHERE id=$1',[source.id])).rows[0].sync_token).toBeNull();
-    expect((await store.list(ctx,source.id)).items).toHaveLength(4);
+    expect((await db.query('SELECT count(*)::int AS n FROM radio_calendar_event_stage WHERE source_id=$1',[source.id])).rows[0].n).toBe(4);
     expect(fetcher.mock.calls.slice(1).map(([,init])=>init?.method)).toEqual(['GET','GET','GET']);
 
     pages.push(new Response(JSON.stringify({items:[],nextSyncToken:'cursor-after-reset'}),{status:200}));

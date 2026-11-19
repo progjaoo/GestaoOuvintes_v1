@@ -294,7 +294,7 @@ export function CalendarIntegrationPage() {
           <ShieldCheck aria-hidden="true" />
           <AlertTitle>Somente leitura, sem alterações na agenda</AlertTitle>
           <AlertDescription>
-            O Gestão consulta a agenda privada. Não cria, edita nem exclui eventos no Google. A sincronização apenas salva uma prévia privada; ela não cria votos, participação ou publicação automaticamente.
+            O Gestão consulta a agenda privada. Não cria, edita nem exclui eventos no Google. Perguntas completas são criadas como enquetes e ficam disponíveis no horário do programa. Eventos incompletos ou conflitantes aguardam revisão; votos e participações são recebidos somente pelo site.
           </AlertDescription>
         </Alert>
 
