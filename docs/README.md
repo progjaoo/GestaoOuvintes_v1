@@ -46,3 +46,5 @@ GestaoOuvintes/
 
 - [Painel RBAC local no Docker](local-rbac-docker.md)
 - [Programas, grade e No Ar - progresso do Plano 007](programacao-enquetes/README.md)
+
+- [Cores das capas de programas: diagnostico e rollout](programacao-enquetes/program-image-colors.md)

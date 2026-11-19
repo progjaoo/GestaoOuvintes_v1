@@ -17,7 +17,7 @@ export async function listPrograms(context: AuthorizationContext, after?: string
     const linked = context.scopes.get('program.read')?.some(s => s.type === 'participation') ?? false;
     if (!global && !linked)
         throw new AppError(403, 'INSUFFICIENT_PERMISSION', 'Permissao insuficiente.');
-    const result = await pool.query(`SELECT p.*,m.object_key AS "imageKey" FROM radio_program p LEFT JOIN media_asset m ON m.id=p.image_asset_id WHERE p.radio_key=$1
+    const result = await pool.query(`SELECT p.*,m.object_key AS "imageKey",m.program_edge_color AS "imageEdgeColor" FROM radio_program p LEFT JOIN media_asset m ON m.id=p.image_asset_id WHERE p.radio_key=$1
     AND ($2::boolean OR EXISTS(SELECT 1 FROM radio_program_host h WHERE h.radio_key=p.radio_key AND h.program_id=p.id
       AND h.admin_user_id=$3 AND h.active AND h.valid_from<=now() AND (h.valid_until IS NULL OR h.valid_until>now())))
     AND ($4::uuid IS NULL OR p.id>$4::uuid) ORDER BY p.id LIMIT 101`, [PROGRAMMING_RADIO, global, context.adminUserId, after ?? null]);
@@ -28,7 +28,7 @@ async function readable(context: AuthorizationContext, id: string) {
     const linked = context.scopes.get('program.read')?.some(s => s.type === 'participation') ?? false;
     if (!global && !linked)
         throw missing();
-    const result = await pool.query(`SELECT p.*,m.object_key AS "imageKey" FROM radio_program p LEFT JOIN media_asset m ON m.id=p.image_asset_id WHERE p.radio_key=$1 AND p.id=$2
+    const result = await pool.query(`SELECT p.*,m.object_key AS "imageKey",m.program_edge_color AS "imageEdgeColor" FROM radio_program p LEFT JOIN media_asset m ON m.id=p.image_asset_id WHERE p.radio_key=$1 AND p.id=$2
     AND ($3::boolean OR EXISTS(SELECT 1 FROM radio_program_host h WHERE h.radio_key=p.radio_key AND h.program_id=p.id
       AND h.admin_user_id=$4 AND h.active AND h.valid_from<=now() AND (h.valid_until IS NULL OR h.valid_until>now())))`, [PROGRAMMING_RADIO, id, global, context.adminUserId]);
     if (!result.rows[0])
