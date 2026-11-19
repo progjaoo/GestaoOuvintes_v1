@@ -11,5 +11,11 @@
       "source": "/(.*)",
       "destination": "/api/index"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/calendar-polls",
+      "schedule": "*/5 * * * *"
+    }
   ]
 }

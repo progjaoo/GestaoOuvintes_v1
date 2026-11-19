@@ -26,6 +26,7 @@ import { adminUserRoutes } from "./routes/admin-users.js";
 import { adminRoleRoutes } from "./routes/admin-roles.js";
 import { adminPermissionRoutes } from "./routes/admin-permissions.js";
 import { adminCalendarOAuthRoutes } from "./routes/admin-calendar-oauth.js";
+import { calendarCronRoutes } from "./routes/cron-calendar-polls.js";
 
 function isDevelopmentLocalOrigin(origin: string) {
   if (env.NODE_ENV !== "development") return false;
@@ -252,6 +253,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminPermissionRoutes, { prefix: "/api/admin/permissions" });
 
   if (env.GOOGLE_CALENDAR_ENABLED) await app.register(adminCalendarOAuthRoutes, { prefix: "/api/admin/calendar-integrations" });
+  if (env.GOOGLE_CALENDAR_CRON_ENABLED) await app.register(calendarCronRoutes, { prefix: "/api/cron" });
   if (env.PUBLIC_POLLS_ENABLED || env.POLLS_PUBLIC_LOCAL_ENABLED) await app.register(publicPollRoutes,{prefix:'/api/public/polls'});
   if (env.POLLS_ENABLED) await app.register(adminPollRoutes, { prefix: "/api/admin" });
   if (env.POLLS_ENABLED) await app.register(adminParticipationRoutes, { prefix: "/api/admin" });

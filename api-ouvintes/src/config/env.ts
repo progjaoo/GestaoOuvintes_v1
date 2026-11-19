@@ -19,11 +19,13 @@ const booleanFromString = z
 const envSchema = z.object({
   GOOGLE_CALENDAR_ENABLED: booleanFromString,
   GOOGLE_CALENDAR_AUTO_SYNC_INTERVAL_SECONDS: z.coerce.number().int().min(0).max(86_400).default(0),
+  GOOGLE_CALENDAR_CRON_ENABLED: booleanFromString,
   GOOGLE_CALENDAR_CLIENT_ID: optionalNonEmptyString,
   GOOGLE_CALENDAR_CLIENT_SECRET: optionalNonEmptyString,
   GOOGLE_CALENDAR_REDIRECT_URI: optionalUrl,
   GOOGLE_CALENDAR_ALLOWED_ID: optionalNonEmptyString,
   GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY: optionalNonEmptyString,
+  CRON_SECRET: optionalNonEmptyString,
   POLLS_ENABLED: booleanFromString,
   PUBLIC_POLLS_ENABLED: booleanFromString,
   POLLS_PUBLIC_LOCAL_ENABLED: booleanFromString,
@@ -184,9 +186,27 @@ if (result.data.GOOGLE_CALENDAR_ENABLED) {
   if (calendarCredentials.some(value => !value)) throw new Error("Google Calendar OAuth exige credenciais completas no backend.");
   if (!result.data.GOOGLE_CALENDAR_ALLOWED_ID) throw new Error("Google Calendar exige uma agenda explicitamente permitida.");
   const callback = new URL(result.data.GOOGLE_CALENDAR_REDIRECT_URI!);
-  if (result.data.NODE_ENV === "production" || result.data.VERCEL_ENV || callback.protocol !== "http:" || !["localhost", "127.0.0.1"].includes(callback.hostname)) throw new Error("OAuth do Plano 009 permanece restrito ao callback HTTP local nesta fase.");
+  const expectedPath = "/api/admin/calendar-integrations/oauth/callback";
+  const localCallback = !result.data.VERCEL_ENV && result.data.NODE_ENV !== "production" &&
+    callback.protocol === "http:" && ["localhost", "127.0.0.1"].includes(callback.hostname);
+  const vercelCallbackHosts = {
+    preview: "gestaoouvintes88fm-api-git-co-04a862-mosaicolabs-4518s-projects.vercel.app",
+    production: "gestaoouvintes88fm-api.vercel.app",
+  } as const;
+  const vercelCallback = result.data.VERCEL_ENV &&
+    result.data.VERCEL_ENV in vercelCallbackHosts &&
+    callback.protocol === "https:" &&
+    callback.hostname === vercelCallbackHosts[result.data.VERCEL_ENV as keyof typeof vercelCallbackHosts];
+  if ((!localCallback && !vercelCallback) || callback.pathname !== expectedPath ||
+      callback.search || callback.hash || callback.username || callback.password) {
+    throw new Error("OAuth do Google exige callback local permitido ou callback HTTPS exato do ambiente Vercel.");
+  }
 } else if (calendarCredentials.some(Boolean)) {
   throw new Error("Credenciais Calendar presentes com GOOGLE_CALENDAR_ENABLED=false; mantenha o recurso desabilitado ate aprovacao.");
+}
+if (result.data.GOOGLE_CALENDAR_CRON_ENABLED &&
+    (!result.data.GOOGLE_CALENDAR_ENABLED || !result.data.CRON_SECRET)) {
+  throw new Error("A sincronizacao agendada do Calendar exige integracao habilitada e CRON_SECRET.");
 }
 if (result.data.GOOGLE_CALENDAR_AUTO_SYNC_INTERVAL_SECONDS > 0 &&
   (!result.data.GOOGLE_CALENDAR_ENABLED || result.data.NODE_ENV === 'production' || result.data.VERCEL_ENV)) {
