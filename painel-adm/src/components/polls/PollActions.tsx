@@ -30,7 +30,7 @@ type ActionKey = PollAction | "publish-public";
 type Action = { key: ActionKey; label: string; states: PollState[] };
 const actions: { key: PollAction; label: string; states: PollState[] }[] = [
   { key: "publish", label: "Publicar", states: ["draft", "scheduled"] },
-  { key: "close", label: "Encerrar", states: ["scheduled", "published"] },
+  { key: "close", label: "Retirar do ar", states: ["scheduled", "published"] },
   { key: "archive", label: "Arquivar", states: ["closed", "canceled"] },
   {
     key: "cancel",
@@ -53,7 +53,9 @@ export function PollActions({ poll }: { poll: Poll }) {
       toast.success(
         key === "publish-public"
           ? "Publicação do snapshot solicitada."
-          : "Estado administrativo atualizado. O snapshot não foi publicado.",
+          : key === "close" || key === "cancel"
+            ? "Enquete retirada do ar. Respostas preservadas; a sincronização não irá reabri-la."
+            : "Estado administrativo atualizado.",
       );
     },
     onError: (error) => {
@@ -138,7 +140,9 @@ export function PollActions({ poll }: { poll: Poll }) {
                 ? "Gera e publica o snapshot público desta enquete no ambiente configurado. Mensagens privadas não são incluídas. Confirme a publicação explícita."
                 : action?.key === "publish"
                   ? "Esta ação altera o estado administrativo e não publica o snapshot. Use Publicar no institucional para atualizar a versão pública."
-                  : "Confirme a mudança de estado desta enquete. A API validará a versão e a transição."}
+                  : action?.key === "close" || action?.key === "cancel"
+                    ? "A enquete deixará de aceitar votos e participações no site, inclusive por link direto. Votos, mensagens e cadastros existentes serão preservados. A sincronização do Google Agenda continuará para as próximas enquetes, mas não reabrirá esta enquete. A agenda da Produção não será alterada."
+                    : "Confirme a mudança de estado desta enquete. A API validará a versão e a transição."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {mutation.isError && <PollError error={mutation.error} />}

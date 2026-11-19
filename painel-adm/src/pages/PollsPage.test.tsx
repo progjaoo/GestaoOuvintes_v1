@@ -387,7 +387,7 @@ describe("Enquetes: fluxo HTTP administrativo", () => {
     expect(screen.getByLabelText("Alternativa 10")).toBeVisible();
   });
   it.each([
-    ["published", "Encerrar", "close"],
+    ["published", "Retirar do ar", "close"],
     ["closed", "Arquivar", "archive"],
     ["draft", "Cancelar enquete", "cancel"],
   ] as const)(

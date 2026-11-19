@@ -61,6 +61,12 @@ export function createCalendarPollMaterializer(db: Pool) {
 
     for (const stage of stages.rows) {
       try {
+        // Respect manual withdrawal, even after Google edits or restores the event.
+        if (stage.poll_id && ['closed', 'canceled', 'archived'].includes(stage.poll_state)) {
+          result.alreadyLinked++;
+          continue;
+        }
+
         if (stage.state === 'canceled') {
           if (!stage.poll_id) continue;
           if (['scheduled', 'published'].includes(stage.poll_state)) {

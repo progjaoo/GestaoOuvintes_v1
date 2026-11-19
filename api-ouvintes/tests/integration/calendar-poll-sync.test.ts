@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AuthorizationContext } from '../../src/services/authorization-service.js';
 import { createCalendarPollStaging } from '../../src/services/calendar-poll-staging.js';
 import { createCalendarPollSync } from '../../src/services/calendar-poll-sync.js';
+import { commandPoll } from '../../src/services/poll-service.js';
 import { encryptCalendarSecret } from '../../src/services/google-calendar-oauth.js';
 
 const suite = process.env.RUN_CALENDAR_STAGING_TESTS === 'true' ? describe : describe.skip;
@@ -95,6 +96,15 @@ suite('Google Calendar sync - disposable PostgreSQL only', () => {
     pages.push(new Response(JSON.stringify({items:[],nextSyncToken:'cursor-after-reset'}),{status:200}));
     const repeated=await sync.sync(ctx,source.id);
     expect(repeated).toMatchObject({parserRevisionRescan:false,publication:{scheduled:0,alreadyLinked:2,failed:0}});
+    expect((await db.query('SELECT count(*) FROM radio_calendar_poll_link WHERE source_id=$1',[source.id])).rows[0].count).toBe('2');
+
+    // Google edits must not reopen a manually withdrawn poll or create a clone.
+    const linkedPoll=links.rows.find(row=>row.event_id==='poll-event').poll_id;
+    const beforeWithdrawal=(await db.query('SELECT version FROM radio_poll WHERE id=$1',[linkedPoll])).rows[0];
+    await commandPoll(ctx,linkedPoll,'close',beforeWithdrawal.version);
+    pages.push(new Response(JSON.stringify({items:[{id:'poll-event',status:'confirmed',summary:'Pergunta alterada no Google?',start:{date:'2030-11-19'},end:{date:'2030-11-20'}}],nextSyncToken:'after-manual-close'}),{status:200}));
+    await sync.sync(ctx,source.id);
+    expect((await db.query('SELECT state FROM radio_poll WHERE id=$1',[linkedPoll])).rows[0].state).toBe('closed');
     expect((await db.query('SELECT count(*) FROM radio_calendar_poll_link WHERE source_id=$1',[source.id])).rows[0].count).toBe('2');
 
     const foreign = await store.createSource(ctx,{calendarId:`other-${randomUUID()}@group.calendar.google.com`,programId});
