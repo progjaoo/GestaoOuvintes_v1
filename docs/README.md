@@ -42,4 +42,7 @@ GestaoOuvintes/
 4. Para trabalhar no painel, siga [Painel administrativo](frontend-admin.md) e [Mobile First](mobile-first.md).
 5. Antes de publicar, revise [Seguranca e privacidade](security-privacy.md) e [Deploy e operacao](deployment-operations.md).
 
-- [Usuários administrativos e RBAC futuro](usuarios-rbac-futuro.md)
+- [Registro histórico de usuários administrativos e RBAC](usuarios-rbac-futuro.md) — consulte [Painel administrativo](frontend-admin.md) para o fluxo atual.
+
+- [Painel RBAC local no Docker](local-rbac-docker.md)
+- [Programas, grade e No Ar - progresso do Plano 007](programacao-enquetes/README.md)

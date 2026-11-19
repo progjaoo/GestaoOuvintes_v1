@@ -44,7 +44,7 @@ export function Dialog({
             </div>
             <DialogPrimitive.Close
               aria-label="Fechar"
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-genesis-muted transition-colors hover:bg-neutral-100 hover:text-genesis-text"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-genesis-muted transition-colors hover:bg-muted hover:text-genesis-text"
             >
               <X className="h-5 w-5" />
             </DialogPrimitive.Close>

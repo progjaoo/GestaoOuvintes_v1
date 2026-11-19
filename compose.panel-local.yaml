@@ -1,0 +1,13 @@
+# Reuses the existing radio88-feed project; never use --remove-orphans here.
+name: radio88-feed
+services:
+  panel:
+    image: radio88-feed-panel:local
+    build:
+      context: ./painel-adm
+      dockerfile: Dockerfile
+      args:
+        VITE_CADASTROS_API_URL: http://127.0.0.1:3012
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5181:80"

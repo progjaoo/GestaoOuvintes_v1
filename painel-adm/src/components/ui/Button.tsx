@@ -10,8 +10,8 @@ const buttonVariants = cva(
         primary: "bg-genesis-primary text-white hover:bg-genesis-primary-hover",
         secondary: "bg-genesis-text text-white hover:bg-neutral-800",
         outline:
-          "border border-genesis-border bg-genesis-surface text-genesis-text hover:border-genesis-primary/40 hover:bg-indigo-50",
-        ghost: "text-genesis-muted hover:bg-neutral-100 hover:text-genesis-text",
+          "border border-genesis-border bg-genesis-surface text-genesis-text hover:border-genesis-primary/40 hover:bg-accent",
+        ghost: "text-genesis-muted hover:bg-muted hover:text-genesis-text",
         danger: "bg-genesis-error text-white hover:bg-red-600",
       },
       size: {

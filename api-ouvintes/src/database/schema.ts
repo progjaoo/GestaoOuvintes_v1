@@ -47,6 +47,16 @@ export const adminUsers = pgTable(
     passwordHash: text("password_hash").notNull(),
     role: varchar("role", { length: 30 }).notNull().default("admin"),
     active: boolean("active").notNull().default(true),
+    authzVersion: integer("authz_version").notNull().default(1),
+    email: varchar("email", { length: 320 }),
+    emailNormalized: varchar("email_normalized", { length: 320 }),
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    phone: varchar("phone", { length: 20 }),
+    phoneNormalized: varchar("phone_normalized", { length: 20 }),
+    version: integer("version").notNull().default(1),
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
+    isSuperAdmin: boolean("is_super_admin").notNull().default(false),
+    passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
@@ -239,6 +249,7 @@ export const roles = pgTable("role", {
   key: varchar("key", { length: 80 }).notNull(),
   name: varchar("name", { length: 120 }).notNull(),
   description: text("description"),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -247,6 +258,19 @@ export const permissions = pgTable("permission", {
   id: uuid("id").primaryKey().defaultRandom(),
   key: varchar("key", { length: 120 }).notNull(),
   description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const adminIdentityTokens = pgTable("admin_identity_token", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  adminUserId: uuid("admin_user_id").notNull().references(() => adminUsers.id, { onDelete: "cascade" }),
+  kind: varchar("kind", { length: 24 }).notNull(),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  deliveryStatus: varchar("delivery_status", { length: 16 }).notNull().default("pending"),
+  createdByAdminUserId: uuid("created_by_admin_user_id").references(() => adminUsers.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

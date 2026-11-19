@@ -1,0 +1,21 @@
+import type { FastifyPluginAsync,FastifyRequest } from 'fastify';
+import {env} from '../config/env.js';
+import {publishPublicPoll} from '../services/poll-service.js';
+import { z } from 'zod';
+import { requireAuthentication } from '../plugins/auth.js';
+import { AppError } from '../lib/errors.js';
+import {pollInput,pollUpdate,pollCommand,pollState} from '../schemas/poll.js';
+import {listPolls,getPoll,savePoll,commandPoll,pollResults} from '../services/poll-service.js';
+const id=(req:FastifyRequest)=>z.object({id:z.uuid()}).parse(req.params).id;
+const auth=(req:FastifyRequest)=>{if(!req.authz)throw new AppError(401,'ADMIN_SESSION_INVALID','Sessao invalida.');return req.authz;};
+export const adminPollRoutes:FastifyPluginAsync=async app=>{
+ app.addHook('preHandler',requireAuthentication);
+ app.addHook('onSend',async(_req,reply)=>{reply.header('Cache-Control','no-store');});
+ if(env.POLLS_PUBLIC_LOCAL_ENABLED)app.post('/polls/:id/publish-public',req=>{z.object({}).strict().parse(req.body??{});return publishPublicPoll(auth(req),id(req));});
+ app.get('/polls',req=>listPolls(auth(req),z.object({programId:z.uuid().optional(),state:pollState.optional(),after:z.uuid().optional()}).strict().parse(req.query)));
+ app.get('/polls/:id',req=>getPoll(auth(req),id(req)));
+ app.get('/polls/:id/results',req=>pollResults(auth(req),id(req)));
+ app.post('/programs/:programId/polls',async(req,reply)=>reply.code(201).send(await savePoll(auth(req),z.object({programId:z.uuid()}).parse(req.params).programId,pollInput.parse(req.body))));
+ app.patch('/polls/:id',req=>savePoll(auth(req),null,pollUpdate.parse(req.body),id(req)));
+ for(const command of ['publish','close','archive','cancel'] as const)app.post('/polls/:id/'+command,req=>commandPoll(auth(req),id(req),command,pollCommand.parse(req.body).version));
+};

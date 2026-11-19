@@ -17,6 +17,20 @@ const booleanFromString = z
   .transform((value) => value === "true");
 
 const envSchema = z.object({
+  GOOGLE_CALENDAR_ENABLED: booleanFromString,
+  GOOGLE_CALENDAR_AUTO_SYNC_INTERVAL_SECONDS: z.coerce.number().int().min(0).max(86_400).default(0),
+  GOOGLE_CALENDAR_CLIENT_ID: optionalNonEmptyString,
+  GOOGLE_CALENDAR_CLIENT_SECRET: optionalNonEmptyString,
+  GOOGLE_CALENDAR_REDIRECT_URI: optionalUrl,
+  GOOGLE_CALENDAR_ALLOWED_ID: optionalNonEmptyString,
+  GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY: optionalNonEmptyString,
+  POLLS_ENABLED: booleanFromString,
+  PUBLIC_POLLS_ENABLED: booleanFromString,
+  POLLS_PUBLIC_LOCAL_ENABLED: booleanFromString,
+  POLLS_PUBLIC_LOCAL_SNAPSHOT_FILE: optionalNonEmptyString,
+  PROGRAMMING_ENABLED: booleanFromString,
+  PROGRAMMING_PUBLICATION_ENABLED: booleanFromString,
+  PROGRAMMING_NAMESPACE: z.string().regex(/^(preview|production|development|test)\/radio-88$/).optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
   HOST: z.string().default("0.0.0.0"),
@@ -65,6 +79,9 @@ const envSchema = z.object({
   FEED_SITE_BASE_URL: optionalUrl,
   FEED_SITE_PROTECTION_BYPASS_SECRET: optionalNonEmptyString,
   FEED_MAX_UPLOAD_BYTES: z.coerce.number().int().positive().max(50 * 1024 * 1024).default(50 * 1024 * 1024),
+  RESEND_API_KEY: optionalNonEmptyString,
+  RESEND_FROM_EMAIL: optionalNonEmptyString,
+  ADMIN_APP_BASE_URL: optionalUrl,
 });
 
 const result = envSchema.safeParse(process.env);
@@ -162,10 +179,42 @@ if (result.data.FEED_NAMESPACE?.startsWith("production/") && result.data.VERCEL_
   throw new Error("O namespace editorial de producao exige VERCEL_ENV=production.");
 }
 
+const calendarCredentials = [result.data.GOOGLE_CALENDAR_CLIENT_ID, result.data.GOOGLE_CALENDAR_CLIENT_SECRET, result.data.GOOGLE_CALENDAR_REDIRECT_URI, result.data.GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY];
+if (result.data.GOOGLE_CALENDAR_ENABLED) {
+  if (calendarCredentials.some(value => !value)) throw new Error("Google Calendar OAuth exige credenciais completas no backend.");
+  if (!result.data.GOOGLE_CALENDAR_ALLOWED_ID) throw new Error("Google Calendar exige uma agenda explicitamente permitida.");
+  const callback = new URL(result.data.GOOGLE_CALENDAR_REDIRECT_URI!);
+  if (result.data.NODE_ENV === "production" || result.data.VERCEL_ENV || callback.protocol !== "http:" || !["localhost", "127.0.0.1"].includes(callback.hostname)) throw new Error("OAuth do Plano 009 permanece restrito ao callback HTTP local nesta fase.");
+} else if (calendarCredentials.some(Boolean)) {
+  throw new Error("Credenciais Calendar presentes com GOOGLE_CALENDAR_ENABLED=false; mantenha o recurso desabilitado ate aprovacao.");
+}
+if (result.data.GOOGLE_CALENDAR_AUTO_SYNC_INTERVAL_SECONDS > 0 &&
+  (!result.data.GOOGLE_CALENDAR_ENABLED || result.data.NODE_ENV === 'production' || result.data.VERCEL_ENV)) {
+  throw new Error('A sincronizacao recorrente local exige Google Calendar habilitado e runtime Docker nao-producao.');
+}
+if (result.data.PUBLIC_POLLS_ENABLED && (!result.data.POLLS_ENABLED || !result.data.PROGRAMMING_ENABLED)) {
+  throw new Error('PUBLIC_POLLS_ENABLED exige enquetes e programacao habilitadas.');
+}
+
+const resendConfigured = Boolean(
+  result.data.RESEND_API_KEY && result.data.RESEND_FROM_EMAIL && result.data.ADMIN_APP_BASE_URL,
+);
+if (
+  !resendConfigured &&
+  (result.data.RESEND_API_KEY || result.data.RESEND_FROM_EMAIL || result.data.ADMIN_APP_BASE_URL)
+) {
+  throw new Error("Resend exige RESEND_API_KEY, RESEND_FROM_EMAIL e ADMIN_APP_BASE_URL juntos.");
+}
+
+if (result.data.POLLS_PUBLIC_LOCAL_ENABLED && (!result.data.POLLS_ENABLED || result.data.NODE_ENV === 'production' || result.data.VERCEL_ENV || !['localhost','127.0.0.1','[::1]','db','postgres','host.docker.internal'].includes(new URL(result.data.DATABASE_URL).hostname))) {
+  throw new Error('POLLS_PUBLIC_LOCAL_ENABLED exige POLLS_ENABLED, runtime local sem Vercel e banco local.');
+}
+
 export const env = {
   ...result.data,
   PUBLIC_CONFIG_NAMESPACE: result.data.PUBLIC_CONFIG_NAMESPACE ?? "",
   FEED_NAMESPACE: result.data.FEED_NAMESPACE ?? "",
+  resendConfigured,
   DEVICE_TOKEN_SECRET: result.data.DEVICE_TOKEN_SECRET ?? result.data.JWT_SECRET,
   corsAllowedOrigins: result.data.CORS_ALLOWED_ORIGINS.split(",")
     .map((origin) => origin.trim())

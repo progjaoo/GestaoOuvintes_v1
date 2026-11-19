@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 import { api, ApiError } from "@/services/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasPermission } from "@/services/permissions";
 import { dateInputToIso } from "@/lib/formatters";
 import type { RegistrationFilters } from "@/types/api";
 import { AppShell, PageHeader } from "@/components/layout/AppShell";
@@ -50,6 +51,7 @@ function toApiFilters(
 export function RegistrationsPage() {
   usePageTitle("Cadastros de ouvintes");
   const { user } = useAuth();
+  const canReadPhone = hasPermission(user, "listener.phone.read");
   const [filters, setFilters] = useState(emptyRegistrationFilters);
   const [debouncedFilters, setDebouncedFilters] = useState(emptyRegistrationFilters);
   const [page, setPage] = useState(1);
@@ -90,6 +92,7 @@ export function RegistrationsPage() {
         ...summaryBaseFilters,
         hasPhone: true,
       }),
+    enabled: canReadPhone,
   });
 
   const activeFilterCount = [
@@ -99,7 +102,7 @@ export function RegistrationsPage() {
     filters.neighborhood,
     filters.startDate,
     filters.endDate,
-    filters.hasPhone,
+    ...(canReadPhone ? [filters.hasPhone] : []),
   ].filter(Boolean).length;
 
   useEffect(() => {
@@ -128,7 +131,7 @@ export function RegistrationsPage() {
     campaignsQuery,
     registrationsQuery,
     totalQuery,
-    withPhoneQuery,
+    ...(canReadPhone ? [withPhoneQuery] : []),
   ].some((query) => query.isFetching);
 
   const refreshData = async () => {
@@ -136,7 +139,7 @@ export function RegistrationsPage() {
       campaignsQuery.refetch(),
       registrationsQuery.refetch(),
       totalQuery.refetch(),
-      withPhoneQuery.refetch(),
+      ...(canReadPhone ? [withPhoneQuery.refetch()] : []),
     ]);
   };
 
@@ -185,7 +188,7 @@ export function RegistrationsPage() {
                 />
                 Atualizar
               </Button>
-              {user?.role === "admin" && (
+              {hasPermission(user, "registration.export") && (
                 <>
                   <Button
                     variant="secondary"
@@ -208,7 +211,7 @@ export function RegistrationsPage() {
           }
         />
 
-        <section className="grid gap-3 sm:grid-cols-3">
+        <section className={`grid gap-3 ${canReadPhone ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           <StatsCard
             label="Total"
             value={totalQuery.data?.pagination.total ?? 0}
@@ -216,14 +219,14 @@ export function RegistrationsPage() {
             icon={UsersRound}
             loading={totalQuery.isLoading}
           />
-          <StatsCard
+          {canReadPhone && <StatsCard
             label="Com telefone"
             value={withPhoneQuery.data?.pagination.total ?? 0}
             hint="Contatos que informaram telefone"
             icon={Phone}
             tone="yellow"
             loading={withPhoneQuery.isLoading}
-          />
+          />}
           <StatsCard
             label="Resultado filtrado"
             value={registrationsQuery.data?.pagination.total ?? 0}
@@ -238,6 +241,7 @@ export function RegistrationsPage() {
           value={filters}
           campaigns={campaignsQuery.data?.items ?? []}
           activeCount={activeFilterCount}
+          canReadPhone={canReadPhone}
           onChange={updateFilters}
           onClear={clearFilters}
         />
@@ -264,6 +268,7 @@ export function RegistrationsPage() {
           <>
             <RegistrationList
               items={registrationsQuery.data?.items ?? []}
+              canReadPhone={canReadPhone}
               onView={setDetailId}
             />
             {registrationsQuery.data && (

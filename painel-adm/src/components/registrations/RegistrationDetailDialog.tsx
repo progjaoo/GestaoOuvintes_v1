@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, MapPin, Megaphone, Phone, UserRound } from "lucide-react";
 import { api } from "@/services/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { hasPermission } from "@/services/permissions";
 import { formatDateTime, formatPhone, sourceLabel } from "@/lib/formatters";
 import { Badge } from "@/components/ui/Badge";
 import { Dialog } from "@/components/ui/Dialog";
@@ -32,6 +34,8 @@ export function RegistrationDetailDialog({
   registrationId: string | null;
   onClose: () => void;
 }) {
+  const { user } = useAuth();
+  const canReadPhone = hasPermission(user, "listener.phone.read");
   const query = useQuery({
     queryKey: ["registration", registrationId],
     queryFn: () => api.getRegistration(registrationId!),
@@ -63,15 +67,15 @@ export function RegistrationDetailDialog({
               </h3>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Badge tone="blue">{query.data.campaignName}</Badge>
-                <Badge tone={query.data.phone ? "green" : "gray"}>
+                {canReadPhone && <Badge tone={query.data.phone ? "green" : "gray"}>
                   {query.data.phone ? "Com telefone" : "Sem telefone"}
-                </Badge>
+                </Badge>}
               </div>
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <DetailItem label="Telefone" value={formatPhone(query.data.phone)} />
+            {canReadPhone && <DetailItem label="Telefone" value={formatPhone(query.data.phone)} />}
             <DetailItem label="Origem" value={sourceLabel(query.data.source)} />
             <DetailItem label="Bairro" value={query.data.neighborhood} />
             <DetailItem label="Cidade" value={query.data.city} />
@@ -125,7 +129,7 @@ export function RegistrationDetailDialog({
               <MapPin className="h-3.5 w-3.5" />
               {query.data.city}
             </span>
-            {query.data.phone && (
+            {canReadPhone && query.data.phone && (
               <span className="inline-flex items-center gap-1">
                 <Phone className="h-3.5 w-3.5" />
                 Telefone informado

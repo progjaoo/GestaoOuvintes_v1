@@ -142,7 +142,7 @@ export function InstitutionalBannersPage() {
           }
         />
 
-        <div className="rounded-xl border border-genesis-border bg-indigo-50 p-4 text-sm text-genesis-muted">
+        <div className="rounded-xl border border-genesis-border bg-accent p-4 text-sm text-genesis-muted">
           As imagens são otimizadas pela API e armazenadas no Cloudflare R2. Formatos aceitos: JPEG, PNG, WebP e AVIF, até 10 MiB.
         </div>
         {bannersQuery.isSuccess && (

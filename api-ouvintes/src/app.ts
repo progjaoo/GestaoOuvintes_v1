@@ -1,4 +1,9 @@
+import {publicPollRoutes} from './routes/public-polls.js';
+import { publicProgrammingRoutes } from "./routes/public-programming.js";
 import cors from "@fastify/cors";
+import { adminParticipationRoutes } from "./routes/admin-participations.js";
+import { adminPollRoutes } from "./routes/admin-polls.js";
+import { adminProgramRoutes } from "./routes/admin-programs.js";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import jwt from "@fastify/jwt";
@@ -17,6 +22,10 @@ import { publicRoutes } from "./routes/public.js";
 import { publicInstitutionalBannerRoutes } from "./routes/public-institutional-banners.js";
 import { adminPublicConfigRoutes } from "./routes/admin-public-config.js";
 import { adminFeedRoutes } from "./routes/admin-feed.js";
+import { adminUserRoutes } from "./routes/admin-users.js";
+import { adminRoleRoutes } from "./routes/admin-roles.js";
+import { adminPermissionRoutes } from "./routes/admin-permissions.js";
+import { adminCalendarOAuthRoutes } from "./routes/admin-calendar-oauth.js";
 
 function isDevelopmentLocalOrigin(origin: string) {
   if (env.NODE_ENV !== "development") return false;
@@ -65,6 +74,12 @@ export async function buildApp(): Promise<FastifyInstance> {
               paths: [
                 "req.headers.authorization",
                 "req.body.name",
+                "req.headers[\"x-device-token\"]",
+                "req.body.message",
+                "req.body.neighborhood",
+                "req.body.city",
+                "res.body.displayName",
+                "res.body.neighborhood",
                 "req.body.phone",
                 "req.body.password",
                 "res.body.accessToken",
@@ -76,6 +91,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     trustProxy: true,
     routerOptions: { ignoreTrailingSlash: true },
   });
+  app.decorateRequest("authz", null);
 
   app.setNotFoundHandler((_request, reply) =>
     reply.code(404).send({
@@ -86,6 +102,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   );
 
   app.setErrorHandler((error, request, reply) => {
+    if (request.url.startsWith('/api/public/polls') && isErrorRecord(error) && [400,413,415].includes(Number(error.statusCode))) {
+      return reply.code(Number(error.statusCode)).send({statusCode:Number(error.statusCode),code:'INVALID_REQUEST',message:'Requisicao invalida.'});
+    }
+    if (request.url.startsWith('/api/public/polls') && isErrorRecord(error) && error.statusCode === 429) {
+      return reply.code(429).send({statusCode:429,code:'RATE_LIMIT_EXCEEDED',message:'Muitas tentativas. Aguarde antes de tentar novamente.'});
+    }
+
     if (error instanceof z.ZodError) {
       return reply.code(400).send({
         statusCode: 400,
@@ -134,6 +157,11 @@ export async function buildApp(): Promise<FastifyInstance> {
         code: "UNAUTHORIZED",
         message: "Autenticacao necessaria ou token invalido.",
       });
+    }
+
+    if (request.url.startsWith('/api/public/polls')) {
+      request.log.error({errorName: error instanceof Error ? error.name : 'Error'}, 'Public poll request failed.');
+      return reply.code(500).send({statusCode:500,code:'INTERNAL_ERROR',message:'Erro interno do servidor.'});
     }
 
     const normalizedError =
@@ -219,6 +247,17 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
   await app.register(adminPublicConfigRoutes, { prefix: "/api/admin/public-config" });
   await app.register(adminFeedRoutes, { prefix: "/api/admin/feed" });
+  await app.register(adminUserRoutes, { prefix: "/api/admin/users" });
+  await app.register(adminRoleRoutes, { prefix: "/api/admin/roles" });
+  await app.register(adminPermissionRoutes, { prefix: "/api/admin/permissions" });
 
+  if (env.GOOGLE_CALENDAR_ENABLED) await app.register(adminCalendarOAuthRoutes, { prefix: "/api/admin/calendar-integrations" });
+  if (env.PUBLIC_POLLS_ENABLED || env.POLLS_PUBLIC_LOCAL_ENABLED) await app.register(publicPollRoutes,{prefix:'/api/public/polls'});
+  if (env.POLLS_ENABLED) await app.register(adminPollRoutes, { prefix: "/api/admin" });
+  if (env.POLLS_ENABLED) await app.register(adminParticipationRoutes, { prefix: "/api/admin" });
+  if (env.PROGRAMMING_ENABLED) {
+ await app.register(adminProgramRoutes, { prefix: "/api/admin" });
+ await app.register(publicProgrammingRoutes, { prefix: "/api/public/programming" });
+ }
   return app;
 }

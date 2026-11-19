@@ -19,11 +19,11 @@ export function FeedPreviewPage() {
     channel.postMessage("ready");
     return () => channel.close();
   }, [token]);
-  return <main className="min-h-screen bg-neutral-100">
-    <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-white p-4">
+  return <main className="min-h-screen bg-muted">
+    <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-genesis-surface p-4">
       <div><h1 className="font-bold">Prévia privada do Feed</h1><p className="text-xs text-genesis-muted">Não publica nem salva alterações. Volte ao editor para continuar.</p></div>
       <div className="flex gap-2"><Button variant={mobile ? "outline" : "primary"} onClick={() => setMobile(false)}>Desktop</Button><Button variant={mobile ? "primary" : "outline"} onClick={() => setMobile(true)}>Mobile</Button></div>
     </header>
-    {data ? <div className={`mx-auto bg-white ${mobile ? "max-w-[390px]" : "max-w-[1280px]"}`}><PrivateArticlePreview revision={data.revision} categories={data.categories} /></div> : <p role="status" className="mx-auto max-w-lg p-12 text-center">Aguardando o editor. Se a prévia expirou ou o editor foi fechado, abra novamente pelo botão Pré-visualizar da matéria.</p>}
+    {data ? <div className={`mx-auto bg-genesis-surface ${mobile ? "max-w-[390px]" : "max-w-[1280px]"}`}><PrivateArticlePreview revision={data.revision} categories={data.categories} /></div> : <p role="status" className="mx-auto max-w-lg p-12 text-center">Aguardando o editor. Se a prévia expirou ou o editor foi fechado, abra novamente pelo botão Pré-visualizar da matéria.</p>}
   </main>;
 }

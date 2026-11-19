@@ -1,37 +1,51 @@
-import type { FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyRequest } from "fastify";
 import { AppError } from "../lib/errors.js";
-import { pool } from "../database/client.js";
+import {
+  hasGlobalPermission,
+  hasPermissionScope,
+  loadAuthorizationContext,
+  type AuthorizationContext,
+} from "../services/authorization-service.js";
 
 export async function requireAuthentication(request: FastifyRequest) {
   await request.jwtVerify();
-}
+  const context = await loadAuthorizationContext({
+    adminUserId: request.user.sub,
+    sessionId: request.user.sid,
+    authzVersion: request.user.authzVersion,
+  });
 
-export function requireAdminRole(
-  request: FastifyRequest,
-  _reply: FastifyReply,
-  done: (error?: Error) => void,
-) {
-  if (request.user.role !== "admin") {
-    done(new AppError(403, "INSUFFICIENT_PERMISSION", "Permissao insuficiente."));
-    return;
+  if (!context) {
+    throw new AppError(401, "ADMIN_SESSION_INVALID", "Sessao invalida ou revogada.");
   }
 
-  done();
+  request.authz = context;
 }
+
+export const requireAdminRole = requirePermission("user.manage");
 
 export function requirePermission(permissionKey: string) {
   return async function permissionPreHandler(request: FastifyRequest) {
-    const result = await pool.query(
-      `SELECT 1
-       FROM admin_user_role aur
-       JOIN role_permission rp ON rp.role_id = aur.role_id
-       JOIN permission p ON p.id = rp.permission_id
-       WHERE aur.admin_user_id = $1 AND p.key = $2
-       LIMIT 1`,
-      [request.user.sub, permissionKey],
-    );
+    // Existing collection/administrative routes are not resource-filtered yet.
+    // A scoped grant must not silently become global access to those endpoints.
+    if (!hasGlobalPermission(request.authz, permissionKey)) {
+      throw new AppError(403, "INSUFFICIENT_PERMISSION", "Permissao insuficiente.");
+    }
+  };
+}
 
-    if (!result.rowCount) {
+export function requireResourcePermission(
+  permissionKey: string,
+  resolveResource: (
+    request: FastifyRequest,
+  ) => Promise<{ ownerId?: string | null; participantIds?: string[]; departmentId?: string | null } | null>,
+) {
+  return async function resourcePermissionPreHandler(request: FastifyRequest) {
+    if (!request.authz?.permissions.has(permissionKey)) {
+      throw new AppError(403, "INSUFFICIENT_PERMISSION", "Permissao insuficiente.");
+    }
+    const resource = await resolveResource(request);
+    if (!resource || !hasPermissionScope(request.authz, permissionKey, resource)) {
       throw new AppError(403, "INSUFFICIENT_PERMISSION", "Permissao insuficiente.");
     }
   };

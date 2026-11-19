@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import { requireAdminRole, requireAuthentication } from "../plugins/auth.js";
+import { requireAuthentication, requirePermission } from "../plugins/auth.js";
 import {
   campaignIdParamsSchema,
   campaignListQuerySchema,
@@ -19,22 +19,27 @@ import { syncPublicConfigAfterMutation } from "../services/public-config-sync.js
 
 export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", requireAuthentication);
+  const canRead = requirePermission("campaign.read");
+  const canCreate = requirePermission("campaign.create");
+  const canUpdate = requirePermission("campaign.update");
+  const canPublish = requirePermission("campaign.publish");
+  const canManage = requirePermission("campaign.admin.manage");
 
-  app.get("/", async (request) => {
+  app.get("/", { preHandler: canRead }, async (request) => {
     const filters = campaignListQuerySchema.parse(request.query);
     return {
       items: await listCampaigns(filters),
     };
   });
 
-  app.get("/placements/list", async () => ({
+  app.get("/placements/list", { preHandler: canRead }, async () => ({
     items: await listPlacements(),
   }));
 
   app.post(
     "/placements/:placementKey/unpublish",
     {
-      preHandler: requireAdminRole,
+      preHandler: canManage,
     },
     async (request, reply) => {
       // Endpoint reservado para a proxima etapa do painel; mantido fora para evitar comportamento parcial.
@@ -49,7 +54,7 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
   app.post(
     "/",
     {
-      preHandler: requireAdminRole,
+      preHandler: canCreate,
     },
     async (request, reply) => {
       const input = createCampaignSchema.parse(request.body);
@@ -62,7 +67,7 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
   app.put(
     "/:id",
     {
-      preHandler: requireAdminRole,
+      preHandler: canUpdate,
     },
     async (request, reply) => {
       const { id } = campaignIdParamsSchema.parse(request.params);
@@ -76,7 +81,7 @@ export const adminCampaignRoutes: FastifyPluginAsync = async (app) => {
   app.post(
     "/:id/publish",
     {
-      preHandler: requireAdminRole,
+      preHandler: canPublish,
     },
     async (request, reply) => {
       const { id } = campaignIdParamsSchema.parse(request.params);

@@ -51,12 +51,14 @@ export function RegistrationFiltersPanel({
   value,
   campaigns,
   activeCount,
+  canReadPhone,
   onChange,
   onClear,
 }: {
   value: RegistrationFilterForm;
   campaigns: Campaign[];
   activeCount: number;
+  canReadPhone: boolean;
   onChange: (value: RegistrationFilterForm) => void;
   onClear: () => void;
 }) {
@@ -83,7 +85,7 @@ export function RegistrationFiltersPanel({
         aria-expanded={expanded}
       >
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-indigo-50 text-genesis-primary">
+          <div className="grid h-10 w-10 place-items-center rounded-lg bg-accent text-genesis-primary">
             <Filter className="h-5 w-5" />
           </div>
           <div>
@@ -113,7 +115,7 @@ export function RegistrationFiltersPanel({
                 id="filter-q"
                 value={value.q}
                 onChange={(event) => update("q", event.target.value)}
-                placeholder="Nome, bairro, cidade, telefone ou campanha"
+                placeholder={canReadPhone ? "Nome, bairro, cidade, telefone ou campanha" : "Nome, bairro, cidade ou campanha"}
                 className="pl-9"
               />
             </div>
@@ -148,17 +150,19 @@ export function RegistrationFiltersPanel({
               placeholder="Retiro"
             />
           </Field>
-          <Field label="Telefone" htmlFor="filter-phone">
-            <Select
-              id="filter-phone"
-              value={value.hasPhone}
-              onChange={(event) => update("hasPhone", event.target.value)}
-            >
-              <option value="">Todos</option>
-              <option value="true">Com telefone</option>
-              <option value="false">Sem telefone</option>
-            </Select>
-          </Field>
+          {canReadPhone && (
+            <Field label="Telefone" htmlFor="filter-phone">
+              <Select
+                id="filter-phone"
+                value={value.hasPhone}
+                onChange={(event) => update("hasPhone", event.target.value)}
+              >
+                <option value="">Todos</option>
+                <option value="true">Com telefone</option>
+                <option value="false">Sem telefone</option>
+              </Select>
+            </Field>
+          )}
           <Field label="Data inicial" htmlFor="filter-start">
             <Input
               id="filter-start"

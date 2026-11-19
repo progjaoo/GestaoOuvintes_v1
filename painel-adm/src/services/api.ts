@@ -1,6 +1,11 @@
 import { getAccessToken } from "@/services/session";
 import type {
   AdminUser,
+  AdminAccessScope,
+  AdminPermissionCatalogItem,
+  ManagedAdminRole,
+  ManagedAdminUser,
+  AdminUserListResponse,
   ApiErrorPayload,
   BootstrapAdminInput,
   BootstrapStatusResponse,
@@ -20,6 +25,14 @@ import type {
   SweepstakeStatusResponse,
 } from "@/types/api";
 import type { EditorialCategory, EditorialMediaAsset, EditorialMediaPreview, EditorialPost, EditorialRevisionInput } from "@/types/feed";
+import type {
+  CalendarOAuthStatus,
+  CalendarProgram,
+  CalendarSource,
+  CalendarSyncResult,
+  PollCalendarResponse,
+  StagedCalendarEvent,
+} from "@/types/calendar-integration";
 
 const API_URL = (import.meta.env.VITE_CADASTROS_API_URL ?? "http://127.0.0.1:3010")
   .replace(/\/+$/, "");
@@ -179,6 +192,102 @@ async function download(path: string, fallbackName: string): Promise<void> {
 }
 
 export const api = {
+  listParticipations(filters: import('@/types/participations').ParticipationFilters = {}, signal?: AbortSignal) {
+    return request<{items: import('@/types/participations').ProgramParticipation[]; nextCursor: string | null}>(`/api/admin/participations${toQueryString(filters)}`, { signal, cache: "no-store" });
+  },
+  getParticipation(id: string, signal?: AbortSignal) {
+    return request<import('@/types/participations').ProgramParticipation>(`/api/admin/participations/${encodeURIComponent(id)}`, { signal });
+  },
+  moderateParticipation(id: string, input: import('@/types/participations').ParticipationModeration, signal?: AbortSignal) {
+    return request<import('@/types/participations').ProgramParticipation>(`/api/admin/participations/${encodeURIComponent(id)}/moderation`, {method: 'PATCH', body: JSON.stringify(input), signal});
+  },
+  listPolls(filters: { programId?: string; state?: string; after?: string } = {}) {
+    return request<{ items: import('@/types/polls').Poll[]; nextCursor: string | null }>(`/api/admin/polls${toQueryString(filters)}`);
+  },
+  getPoll(id: string) { return request<import('@/types/polls').Poll>(`/api/admin/polls/${encodeURIComponent(id)}`); },
+  createPoll(programId: string, input: import('@/types/polls').PollInput) {
+    return request<import('@/types/polls').Poll>(`/api/admin/programs/${encodeURIComponent(programId)}/polls`, { method: 'POST', body: JSON.stringify(input) });
+  },
+  updatePoll(id: string, input: import('@/types/polls').PollInput & { version: number }) {
+    return request<import('@/types/polls').Poll>(`/api/admin/polls/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(input) });
+  },
+  transitionPoll(id: string, action: import('@/types/polls').PollAction, version: number) {
+    return request<import('@/types/polls').Poll>(`/api/admin/polls/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: JSON.stringify({ version }) });
+  },
+  pollResults(id: string, signal?: AbortSignal) { return request<import('@/types/polls').PollResults>(`/api/admin/polls/${encodeURIComponent(id)}/results`, { signal, cache: "no-store" }); },
+  publishPollPublic(id: string) {
+    return request<unknown>(`/api/admin/polls/${encodeURIComponent(id)}/publish-public`, { method: 'POST' });
+  },
+  getCalendarOAuthStatus(signal?: AbortSignal) {
+    return request<CalendarOAuthStatus>("/api/admin/calendar-integrations/status", { signal, cache: "no-store" });
+  },
+  startCalendarOAuth() {
+    return request<{ authorizationUrl: string; expiresInSeconds: number }>("/api/admin/calendar-integrations/oauth/start", { method: "POST" });
+  },
+  listCalendarPrograms(signal?: AbortSignal) {
+    return request<CalendarProgram[]>("/api/admin/calendar-integrations/programs", { signal });
+  },
+  listCalendarSources(signal?: AbortSignal) {
+    return request<CalendarSource[]>("/api/admin/calendar-integrations/sources", { signal, cache: "no-store" });
+  },
+  createCalendarSource(programId: string) {
+    return request<{ id: string; version: number; active: boolean }>("/api/admin/calendar-integrations/sources", {
+      method: "POST",
+      body: JSON.stringify({ programId }),
+    });
+  },
+  configureCalendarSourcePrograms(sourceId: string, input: { version: number; defaultProgramId: string; allowedProgramIds: string[] }) {
+    return request<{ id: string; version: number; active: boolean; defaultProgramId: string }>(
+      `/api/admin/calendar-integrations/sources/${encodeURIComponent(sourceId)}/programs`,
+      { method: "PATCH", body: JSON.stringify(input) },
+    );
+  },
+  setCalendarSourceActive(sourceId: string, version: number, active: boolean) {
+    return request<{ id: string; version: number; active: boolean }>(
+      `/api/admin/calendar-integrations/sources/${encodeURIComponent(sourceId)}`,
+      { method: "PATCH", body: JSON.stringify({ version, active }) },
+    );
+  },
+  syncCalendarSource(sourceId: string) {
+    return request<CalendarSyncResult>(
+      `/api/admin/calendar-integrations/sources/${encodeURIComponent(sourceId)}/sync`,
+      { method: "POST" },
+    );
+  },
+  listStagedCalendarEvents(sourceId: string, after?: string, signal?: AbortSignal) {
+    return request<{ items: StagedCalendarEvent[]; nextCursor: string | null }>(
+      `/api/admin/calendar-integrations/sources/${encodeURIComponent(sourceId)}/events${toQueryString({ after, limit: 50 })}`,
+      { signal, cache: "no-store" },
+    );
+  },
+  async listPollCalendar(filters: { from: string; to: string; programId?: string; state?: string; q?: string }, signal?: AbortSignal): Promise<PollCalendarResponse> {
+    const items: PollCalendarResponse["items"] = [];
+    let after: string | undefined;
+    let page: PollCalendarResponse | undefined;
+    for (let index = 0; index < 20; index++) {
+      page = await request<PollCalendarResponse>(`/api/admin/calendar-integrations/calendar${toQueryString({ ...filters, after, limit: 200 })}`, { signal, cache: "no-store" });
+      items.push(...page.items);
+      if (!page.nextCursor) return { ...page, items, nextCursor: null };
+      after = page.nextCursor;
+    }
+    throw new ApiError(413, "POLL_CALENDAR_LIMIT", "O período contém mais itens do que o calendário consegue carregar de uma vez.");
+  },
+ uploadProgramImage(file:File){const body=new FormData();body.append('file',file);return request<{id:string;imageUrl:string}>('/api/admin/programs/assets',{method:'POST',body});},
+ saveProgramSlotsBatch(id:string,weekdays:number[],slot:import('@/types/programming').SlotInput){return request('/api/admin/programs/'+id+'/slots/batch',{method:'POST',body:JSON.stringify({weekdays,slot})});},
+ listProgrammingOverrides(){return request<{items:import('@/types/programming').ProgrammingOverride[]}>('/api/admin/programming/overrides');},
+ saveProgrammingOverride(input:import('@/types/programming').OverrideInput,id?:string){return request('/api/admin/programming/overrides'+(id?'/'+id:''),{method:id?'PATCH':'POST',body:JSON.stringify(input)});},
+ programmingPublication(){return request<{enabled:boolean;publication:{revision:string;status:string;attempts:number;lastError:string|null;validUntil:string}|null}>('/api/admin/programming/publication');},
+ publishProgramming(retry=false){return request<{status:string;revision?:string}>('/api/admin/programming/'+(retry?'publications/retry':'publish'),{method:'POST'});},
+ programmingWeek(){return request<{items:Array<import('@/types/programming').ProgramSlot & {programId:string;programName:string}>}>('/api/admin/programming/weekly');},
+
+  listPrograms(after?:string) { return request<{items:import('@/types/programming').RadioProgram[];nextCursor:string|null}>(`/api/admin/programs${after?'?after='+encodeURIComponent(after):''}`); },
+  getProgram(id:string) { return request<import('@/types/programming').ProgramDetail>(`/api/admin/programs/${id}`); },
+  saveProgram(input:Omit<import('@/types/programming').RadioProgram,'id'|'version'> & {version?:number},id?:string) { return request<import('@/types/programming').RadioProgram>(`/api/admin/programs${id?'/'+id:''}`,{method:id?'PATCH':'POST',body:JSON.stringify(input)}); },
+  saveProgramSlot(id:string,input:import('@/types/programming').SlotInput,slotId?:string) {return request(`/api/admin/programs/${id}/slots${slotId?'/'+slotId:''}`,{method:slotId?'PATCH':'POST',body:JSON.stringify(input)});},
+  saveProgramHost(id:string,userId:string,input:import('@/types/programming').HostInput) {return request(`/api/admin/programs/${id}/hosts/${userId}`,{method:'PUT',body:JSON.stringify(input)});},
+  eligibleProgramHosts(id:string) {return request<{items:{id:string;name:string}[]}>(`/api/admin/programs/${id}/eligible-hosts`);},
+  simulateProgramming(at:string) {return request<{at:string;timezone:string;current:{programId:string;name:string;source:string}|null}>(`/api/admin/programming/simulate?at=${encodeURIComponent(at)}`);},
+
   republishPublicConfig() {
     return request<{ syncStatus: "published" | "pending" | "disabled"; revision: string | null }>(
       "/api/admin/public-config/republish",
@@ -200,12 +309,84 @@ export const api = {
     });
   },
 
-  login(username: string, password: string) {
+  login(identifier: string, password: string) {
     return request<LoginResponse>("/api/admin/auth/login", {
       method: "POST",
       authenticated: false,
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ identifier, password }),
     });
+  },
+
+  requestPasswordReset(email: string) {
+    return request<{ message: string }>("/api/admin/auth/forgot-password", {
+      method: "POST", authenticated: false, body: JSON.stringify({ email }),
+    });
+  },
+
+  consumeIdentityToken(token: string, password?: string) {
+    return request<void>("/api/admin/auth/identity/consume", {
+      method: "POST", authenticated: false, body: JSON.stringify({ token, ...(password ? { password } : {}) }),
+    });
+  },
+
+  requestEmailVerification() {
+    return request<{ message: string }>("/api/admin/auth/email-verification/request", { method: "POST" });
+  },
+
+  reauthenticate(password: string) {
+    return request<void>("/api/admin/auth/reauthenticate", { method: "POST", body: JSON.stringify({ password }) });
+  },
+
+  listAdminUsers(params: { q?: string; status?: "active" | "inactive" | "all"; page?: number; pageSize?: number } = {}) {
+    return request<AdminUserListResponse>(`/api/admin/users${toQueryString(params)}`);
+  },
+
+  getAdminUser(userId: string) {
+    return request<{ user: ManagedAdminUser }>(`/api/admin/users/${userId}`);
+  },
+
+  createAdminUser(input: { name: string; email: string; phone?: string | null; roleIds: string[] }) {
+    return request<{ user: ManagedAdminUser; deliveryStatus: string }>("/api/admin/users", { method: "POST", body: JSON.stringify(input) });
+  },
+
+  updateAdminUser(userId: string, input: { name?: string; email?: string; phone?: string | null; active?: boolean; roleIds?: string[]; version: number }) {
+    return request<{ user: ManagedAdminUser; emailDeliveryStatus?: string }>(`/api/admin/users/${userId}`, { method: "PATCH", body: JSON.stringify(input) });
+  },
+
+  resendAdminInvitation(userId: string) {
+    return request<{ deliveryStatus: string }>(`/api/admin/users/${userId}/invitation/resend`, { method: "POST" });
+  },
+
+  updateAdminOverrides(userId: string, overrides: Array<{ permissionKey: string; effect: "ALLOW" | "DENY"; scopeType?: AdminAccessScope; departmentId?: string | null; reason: string }>) {
+    return request<void>(`/api/admin/users/${userId}/overrides`, { method: "PUT", body: JSON.stringify({ overrides }) });
+  },
+
+  requestAdminPasswordReset(userId: string, reason: string) {
+    return request<{ deliveryStatus: string }>(`/api/admin/users/${userId}/password-reset`, { method: "POST", body: JSON.stringify({ reason }) });
+  },
+
+  revokeAdminSession(userId: string, sessionId: string) {
+    return request<void>(`/api/admin/users/${userId}/sessions/${sessionId}`, { method: "DELETE" });
+  },
+
+  listAdminRoles() {
+    return request<{ items: ManagedAdminRole[] }>("/api/admin/roles");
+  },
+
+  createAdminRole(input: { key: string; name: string; description?: string | null; grants: Array<{ permissionKey: string; scopeType: AdminAccessScope; departmentId?: string | null }> }) {
+    return request<ManagedAdminRole>("/api/admin/roles", { method: "POST", body: JSON.stringify(input) });
+  },
+
+  updateAdminRole(roleId: string, input: { name: string; description?: string | null; version: number; grants: Array<{ permissionKey: string; scopeType: AdminAccessScope; departmentId?: string | null }> }) {
+    return request<ManagedAdminRole>(`/api/admin/roles/${roleId}`, { method: "PATCH", body: JSON.stringify(input) });
+  },
+
+  deleteAdminRole(roleId: string) {
+    return request<void>(`/api/admin/roles/${roleId}`, { method: "DELETE" });
+  },
+
+  listAdminPermissions() {
+    return request<{ items: AdminPermissionCatalogItem[] }>("/api/admin/permissions");
   },
 
   me() {

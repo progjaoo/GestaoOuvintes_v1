@@ -15,6 +15,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  canCreateCampaign,
+  canDrawSweepstake,
+  canPublishCampaign,
+  canUpdateCampaign,
+} from "@/services/permissions";
 import { api, ApiError } from "@/services/api";
 import { dateInputToIso, formatDateTime } from "@/lib/formatters";
 import type { Campaign, CampaignFilters, CampaignInput, CampaignSortBy, CampaignStatus, SortDirection } from "@/types/api";
@@ -83,9 +89,10 @@ export function CampaignsPage() {
   const [sweepstakeCampaign, setSweepstakeCampaign] = useState<Campaign | null>(null);
   const [filters, setFilters] = useState(emptyCampaignFilters);
 
-  const canDrawSweepstake = user?.permissions
-    ? user.permissions.includes("sweepstake.draw")
-    : user?.role === "admin";
+  const canDraw = canDrawSweepstake(user);
+  const canCreate = canCreateCampaign(user);
+  const canUpdate = canUpdateCampaign(user);
+  const canPublish = canPublishCampaign(user);
 
   const apiFilters = useMemo(() => toCampaignApiFilters(filters), [filters]);
   const activeFilterCount = [
@@ -207,7 +214,7 @@ export function CampaignsPage() {
                 />
                 Atualizar
               </Button>
-              {user?.role === "admin" && (
+              {canCreate && (
                 <Button onClick={openCreate}>
                   <Plus className="h-4 w-4" />
                   Nova campanha
@@ -217,7 +224,7 @@ export function CampaignsPage() {
           }
         />
 
-        <div className="rounded-xl border border-genesis-border bg-indigo-50 p-4 sm:flex sm:items-center sm:gap-4">
+        <div className="rounded-xl border border-genesis-border bg-accent p-4 sm:flex sm:items-center sm:gap-4">
           <div className="grid h-11 w-11 place-items-center rounded-lg bg-genesis-surface text-genesis-primary shadow-sm">
             <ShieldCheck className="h-5 w-5" />
           </div>
@@ -232,7 +239,7 @@ export function CampaignsPage() {
         <section className="rounded-xl border border-genesis-border bg-genesis-surface p-4 shadow-sm sm:p-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-lg bg-indigo-50 text-genesis-primary">
+              <div className="grid h-10 w-10 place-items-center rounded-lg bg-accent text-genesis-primary">
                 <Filter className="h-5 w-5" />
               </div>
               <div>
@@ -358,13 +365,15 @@ export function CampaignsPage() {
                       {campaign.slug}
                     </p>
                   </div>
-                  {(user?.role === "admin" || (campaign.type === "sweepstake" && canDrawSweepstake)) && (
+                  {(canUpdate || canPublish || (campaign.type === "sweepstake" && canDraw)) && (
                     <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                      {user?.role === "admin" && (<>
+                      {canUpdate && (
                       <Button variant="outline" className="w-full" onClick={() => openEdit(campaign)}>
                         <Edit3 className="h-4 w-4" />
                         Editar
                       </Button>
+                      )}
+                      {canPublish && (
                       <Button
                         className="w-full"
                         onClick={() => publishMutation.mutate(campaign.id)}
@@ -373,8 +382,8 @@ export function CampaignsPage() {
                         <Send className="h-4 w-4" />
                         {isPublishedInInstitutionalModal ? "Publicada" : "Publicar"}
                       </Button>
-                      </>)}
-                      {campaign.type === "sweepstake" && canDrawSweepstake && (
+                      )}
+                      {campaign.type === "sweepstake" && canDraw && (
                         <Button
                           variant="secondary"
                           className="w-full sm:col-span-2"
@@ -399,6 +408,7 @@ export function CampaignsPage() {
         <CampaignFormDialog
           open={dialogOpen}
           campaign={selectedCampaign}
+          canPublish={canPublish}
           publishedInInstitutionalModal={
             selectedCampaign ? institutionalPlacement?.campaignId === selectedCampaign.id : true
           }

@@ -48,3 +48,12 @@ describe("api helpers", () => {
     window.removeEventListener(PUBLIC_CONFIG_SYNC_EVENT, onSync);
   });
 });
+
+ it("publica snapshot somente no endpoint explícito sem dados privados", async () => {
+   const fetcher = vi.fn().mockResolvedValue(Response.json({ revision: 1 }));
+   vi.stubGlobal("fetch", fetcher);
+   await api.publishPollPublic("poll-1");
+   expect(fetcher.mock.calls[0]?.[0]).toMatch(/\/api\/admin\/polls\/poll-1\/publish-public$/);
+   expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: "POST" });
+   expect(fetcher.mock.calls[0]?.[1].body).toBeUndefined();
+ });

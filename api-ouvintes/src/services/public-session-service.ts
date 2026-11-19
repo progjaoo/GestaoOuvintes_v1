@@ -57,7 +57,7 @@ interface RegistrationInput {
   };
 }
 
-function hashDeviceToken(token: string) {
+export function hashDeviceToken(token: string) {
   return createHmac("sha256", env.DEVICE_TOKEN_SECRET).update(token).digest("hex");
 }
 

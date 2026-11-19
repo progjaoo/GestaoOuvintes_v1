@@ -6,10 +6,66 @@ export interface AdminUser {
   id: string;
   name: string;
   username: string;
+  email?: string | null;
+  emailVerifiedAt?: string | null;
   role: AdminRole;
   active?: boolean;
+  isSuperAdmin?: boolean;
+  mustChangePassword?: boolean;
   lastLoginAt?: string | null;
   permissions?: string[];
+}
+
+export type AdminAccessScope = "global" | "own" | "participation" | "department";
+
+export interface AdminRoleGrant {
+  permissionKey: string;
+  scopeType: AdminAccessScope;
+  departmentId?: string | null;
+  description?: string | null;
+}
+
+export interface ManagedAdminUser {
+  id: string;
+  name: string;
+  username: string;
+  email: string | null;
+  email_verified_at: string | null;
+  phone: string | null;
+  active: boolean;
+  is_super_admin: boolean;
+  must_change_password?: boolean;
+  role: AdminRole;
+  version: number;
+  created_at?: string;
+  updated_at?: string;
+  last_login_at: string | null;
+  roles: Array<{ id: string; key: string; name: string }>;
+  effectivePermissions?: Array<{ permission_key: string; scope_type: AdminAccessScope; department_id: string | null }>;
+  overrides?: Array<{ permission_key: string; effect: "ALLOW" | "DENY"; scope_type: AdminAccessScope | null; department_id: string | null; reason: string; created_at: string }>;
+  sessions?: Array<{ id: string; created_at: string; expires_at: string; revoked_at: string | null; revoke_reason: string | null }>;
+}
+
+export interface ManagedAdminRole {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  version: number;
+  updated_at?: string;
+  user_count: number;
+  grants: Array<AdminRoleGrant & { description?: string | null }>;
+}
+
+export interface AdminPermissionCatalogItem {
+  key: string;
+  description: string;
+  role_grants: Array<{ roleId: string; roleKey: string; roleName: string; scopeType: AdminAccessScope; departmentId: string | null }>;
+}
+
+export interface AdminUserListResponse {
+  items: ManagedAdminUser[];
+  pagination: Pagination;
 }
 
 export interface LoginResponse {

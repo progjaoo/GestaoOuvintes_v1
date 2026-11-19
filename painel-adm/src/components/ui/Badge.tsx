@@ -6,11 +6,11 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const tones = {
-  blue: "bg-indigo-50 text-genesis-primary ring-genesis-primary/15",
+  blue: "bg-accent text-genesis-primary ring-genesis-primary/15",
   green: "bg-emerald-50 text-emerald-700 ring-genesis-success/20",
   yellow: "bg-amber-50 text-amber-800 ring-genesis-warning/20",
   red: "bg-red-50 text-genesis-error ring-genesis-error/20",
-  gray: "bg-neutral-100 text-genesis-muted ring-neutral-500/15",
+  gray: "bg-muted text-genesis-muted ring-neutral-500/15",
 };
 
 export function Badge({ tone = "gray", className, ...props }: BadgeProps) {

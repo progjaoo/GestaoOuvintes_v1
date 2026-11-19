@@ -17,7 +17,7 @@ export function StatsCard({
   loading?: boolean;
 }) {
   const tones = {
-    blue: "bg-indigo-50 text-genesis-primary",
+    blue: "bg-accent text-genesis-primary",
     yellow: "bg-amber-50 text-amber-700",
     red: "bg-red-50 text-genesis-error",
   };
@@ -30,7 +30,7 @@ export function StatsCard({
             {label}
           </p>
           {loading ? (
-            <div className="mt-3 h-10 w-20 animate-pulse rounded-md bg-neutral-100" />
+            <div className="mt-3 h-10 w-20 animate-pulse rounded-md bg-muted" />
           ) : (
             <p className="mt-2 font-display text-4xl font-semibold text-genesis-text">
               {value.toLocaleString("pt-BR")}

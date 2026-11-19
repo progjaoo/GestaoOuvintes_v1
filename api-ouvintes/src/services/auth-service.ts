@@ -4,16 +4,14 @@ import { db, pool } from "../database/client.js";
 import { adminUsers } from "../database/schema.js";
 import { AppError } from "../lib/errors.js";
 
-async function getAdminPermissions(adminUserId: string): Promise<string[]> {
-  const result = await pool.query<{ key: string }>(
-    "SELECT DISTINCT p.key " +
-      "FROM admin_user_role aur " +
-      "JOIN role_permission rp ON rp.role_id = aur.role_id " +
-      "JOIN permission p ON p.id = rp.permission_id " +
-      "WHERE aur.admin_user_id = $1 ORDER BY p.key",
-    [adminUserId],
-  );
-  return result.rows.map((row) => row.key);
+export function jwtExpiresAt(expiresIn: string, now = new Date()) {
+  const match = expiresIn.trim().match(/^(\d+)(s|m|h|d)$/i);
+  if (!match) throw new Error("JWT_EXPIRES_IN precisa usar formato s, m, h ou d.");
+  const value = Number(match[1]);
+  const multiplier = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[
+    match[2]!.toLowerCase() as "s" | "m" | "h" | "d"
+  ];
+  return new Date(now.getTime() + value * multiplier);
 }
 
 export async function canBootstrapAdmin(): Promise<boolean> {
@@ -72,15 +70,20 @@ export async function bootstrapFirstAdmin(input: {
     name: user.name,
     username: user.username,
     role: user.role as "admin" | "viewer",
-    permissions: await getAdminPermissions(user.id),
   };
 }
 
-export async function authenticateAdmin(username: string, password: string) {
-  const normalizedUsername = username.trim().toLocaleLowerCase("pt-BR");
-  const user = await db.query.adminUsers.findFirst({
-    where: eq(adminUsers.username, normalizedUsername),
+export async function authenticateAdmin(identifier: string, password: string) {
+  const normalizedIdentifier = identifier.trim().toLocaleLowerCase("pt-BR");
+  let user = await db.query.adminUsers.findFirst({
+    where: eq(adminUsers.username, normalizedIdentifier),
   });
+  if (!user && normalizedIdentifier.includes("@")) {
+    user = await db.query.adminUsers.findFirst({
+      where: eq(adminUsers.emailNormalized, normalizedIdentifier),
+    });
+    if (user?.emailVerifiedAt === null) user = undefined;
+  }
 
   const passwordMatches =
     user?.active === true ? await argon2.verify(user.passwordHash, password) : false;
@@ -98,19 +101,36 @@ export async function authenticateAdmin(username: string, password: string) {
     id: user.id,
     name: user.name,
     username: user.username,
+    email: user.email,
+    emailVerifiedAt: user.emailVerifiedAt,
     role: user.role as "admin" | "viewer",
-    permissions: await getAdminPermissions(user.id),
+    isSuperAdmin: user.isSuperAdmin,
+    mustChangePassword: user.mustChangePassword,
   };
 }
 
-export async function getActiveAdmin(id: string) {
+export async function verifyAdminPassword(adminUserId: string, password: string) {
+  const user = await db.query.adminUsers.findFirst({
+    columns: { passwordHash: true, active: true },
+    where: eq(adminUsers.id, adminUserId),
+  });
+  if (!user?.active) return false;
+  return argon2.verify(user.passwordHash, password);
+}
+
+export async function getActiveAdmin(id: string, permissions: string[]) {
   const user = await db.query.adminUsers.findFirst({
     columns: {
       id: true,
       name: true,
       username: true,
+      email: true,
+      emailVerifiedAt: true,
       role: true,
       active: true,
+      isSuperAdmin: true,
+      mustChangePassword: true,
+      phone: true,
       lastLoginAt: true,
     },
     where: eq(adminUsers.id, id),
@@ -120,5 +140,5 @@ export async function getActiveAdmin(id: string) {
     throw new AppError(401, "ADMIN_INACTIVE", "Sessao invalida.");
   }
 
-  return { ...user, permissions: await getAdminPermissions(user.id) };
+  return { ...user, permissions };
 }

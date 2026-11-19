@@ -193,6 +193,7 @@ export async function createListenerRegistration(
 
 export function buildRegistrationConditions(
   filters: Omit<RegistrationFilters, "format">,
+  options: { canSearchPhone?: boolean } = {},
 ): SQL[] {
   const conditions: SQL[] = [isNull(listenerRegistrations.deletedAt)];
 
@@ -222,7 +223,9 @@ export function buildRegistrationConditions(
       ilike(listenerRegistrations.city, query),
       ilike(listenerRegistrations.neighborhood, query),
       ilike(campaigns.name, query),
-      ...(phoneDigits.length > 0 ? [ilike(listenerRegistrations.phone, `%${phoneDigits}%`)] : []),
+      ...(options.canSearchPhone && phoneDigits.length > 0
+        ? [ilike(listenerRegistrations.phone, `%${phoneDigits}%`)]
+        : []),
     );
 
     if (searchCondition) {
@@ -256,9 +259,10 @@ export async function listListenerRegistrations(
     page: number;
     pageSize: number;
   },
+  options: { canSearchPhone?: boolean } = {},
 ) {
   const { page, pageSize, ...filterValues } = filters;
-  const where = and(...buildRegistrationConditions(filterValues));
+  const where = and(...buildRegistrationConditions(filterValues, options));
 
   const [rows, totalRows] = await Promise.all([
     db
@@ -333,11 +337,12 @@ export async function getListenerRegistration(id: string) {
 
 export async function getRegistrationsForExport(
   filters: Omit<RegistrationFilters, "format">,
+  options: { canSearchPhone?: boolean; canReadPhone?: boolean } = {},
 ) {
-  const where = and(...buildRegistrationConditions(filters));
+  const where = and(...buildRegistrationConditions(filters, options));
   const orderBy = getRegistrationOrderBy(filters);
 
-  return db
+  const rows = await db
     .select({
       id: listenerRegistrations.id,
       campaignId: listenerRegistrations.campaignId,
@@ -355,6 +360,8 @@ export async function getRegistrationsForExport(
     .where(where)
     .orderBy(orderBy)
     .limit(env.EXPORT_MAX_ROWS);
+
+  return options.canReadPhone ? rows : rows.map((row) => ({ ...row, phone: null }));
 }
 
 export async function auditExport(input: {

@@ -13,6 +13,16 @@ O painel permite que a equipe consulte cadastros de ouvintes, gerencie campanhas
 - `/login`
 - `/ouvintes/cadastros`
 - `/campanhas`
+- `/administracao/acessos/usuarios`
+- `/administracao/acessos/usuarios/:userId`
+- `/administracao/acessos/papeis`
+- `/administracao/acessos/telas`
+
+O RBAC administrativo é apresentado em uma única seção **Acessos** da sidebar, com as abas **Usuários**, **Papéis** e **Acesso por tela**. As abas são exibidas conforme as permissões efetivas; links antigos de administração redirecionam para a seção consolidada.
+
+Na aba **Papéis**, a lista fica ao lado da matriz de permissões agrupada por módulo. Cada concessão mantém seu escopo; visualizar uma tela não concede automaticamente ações de edição, exportação ou publicação. A matriz de **Acesso por tela** consulta o acesso efetivo do usuário e altera apenas exceções individuais já suportadas pela API. Ela preserva overrides de outras permissões e exige justificativa e reautenticação para salvar. Exceções individuais permanecem exclusivas do Super Admin; não é permitido alterar a própria conta ou a conta protegida.
+
+O status **Limitado por escopo** significa que existe uma concessão parcial, mas as rotas administrativas atuais exigem acesso global. A interface não converte esse escopo em acesso global sem uma ação explícita.
 
 ## Padroes de frontend
 

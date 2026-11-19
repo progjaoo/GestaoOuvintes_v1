@@ -81,7 +81,7 @@ export function FeedMediaPickerDialog({
       footer={<Button variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>}
     >
       <div className="space-y-5">
-        <div className="flex flex-col justify-between gap-3 rounded-lg border border-genesis-border bg-neutral-50 p-4 sm:flex-row sm:items-center">
+        <div className="flex flex-col justify-between gap-3 rounded-lg border border-genesis-border bg-genesis-bg p-4 sm:flex-row sm:items-center">
           <div className="min-w-0">
             <p className="font-semibold text-genesis-text">Adicionar arquivo</p>
             <p className="mt-1 text-xs leading-5 text-genesis-muted">Imagem até 10 MB · GIF até 10 MB/15 s · MP4 até 50 MB/120 s. O arquivo vai primeiro para o bucket privado de Preview.</p>
@@ -128,14 +128,14 @@ export function FeedMediaPickerDialog({
 function MediaCard({ asset, onSelect, selectable }: { asset: EditorialMediaAsset; onSelect?: () => void; selectable: boolean }) {
   const isVisual = asset.mediaType !== "video";
   const content = <>
-      <div className="relative aspect-[4/3] overflow-hidden bg-neutral-100">
+      <div className="relative aspect-[4/3] overflow-hidden bg-muted">
         {isVisual && asset.previewUrl ? <img src={asset.previewUrl} alt="" loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <div className="grid h-full place-items-center text-genesis-muted">{asset.mediaType === "video" ? <Film size={30} /> : <FileImage size={30} />}</div>}
         <span className="absolute bottom-2 left-2 rounded bg-black/75 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">{labels[asset.mediaType]}</span>
-        {asset.status !== "ready" && <span className="absolute inset-0 grid place-items-center bg-white/70 text-xs font-semibold text-neutral-700">{asset.status === "rejected" ? "Rejeitada" : "Validando"}</span>}
+        {asset.status !== "ready" && <span className="absolute inset-0 grid place-items-center bg-genesis-surface/70 text-xs font-semibold text-genesis-text">{asset.status === "rejected" ? "Rejeitada" : "Validando"}</span>}
       </div>
       <div className="p-3"><p className="truncate text-sm font-semibold text-genesis-text">{asset.originalName ?? "Mídia sem nome"}</p><p className="mt-1 text-xs text-genesis-muted">{formatBytes(asset.byteSize)}{asset.width && asset.height ? ` · ${asset.width} × ${asset.height}` : ""}</p></div>
     </>;
-  return selectable ? <button type="button" onClick={onSelect} disabled={asset.status !== "ready"} className="group overflow-hidden rounded-lg border border-genesis-border bg-white text-left transition hover:border-genesis-primary hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-genesis-primary disabled:cursor-not-allowed disabled:opacity-60">{content}</button> : <div className="overflow-hidden rounded-lg border border-genesis-border bg-white">{content}</div>;
+  return selectable ? <button type="button" onClick={onSelect} disabled={asset.status !== "ready"} className="group overflow-hidden rounded-lg border border-genesis-border bg-genesis-surface text-left transition hover:border-genesis-primary hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-genesis-primary disabled:cursor-not-allowed disabled:opacity-60">{content}</button> : <div className="overflow-hidden rounded-lg border border-genesis-border bg-genesis-surface">{content}</div>;
 }
 
 function mediaTypeFor(file: File): FeedMediaType | null {

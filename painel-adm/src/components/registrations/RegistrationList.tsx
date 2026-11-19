@@ -7,9 +7,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 
 export function RegistrationList({
   items,
+  canReadPhone,
   onView,
 }: {
   items: RegistrationListItem[];
+  canReadPhone: boolean;
   onView: (id: string) => void;
 }) {
   if (items.length === 0) {
@@ -26,14 +28,14 @@ export function RegistrationList({
     <>
       <div className="space-y-3 lg:hidden">
         {items.map((item) => {
-          const whatsApp = whatsappUrl(item.phone);
+          const whatsApp = canReadPhone ? whatsappUrl(item.phone) : null;
           return (
             <article
               key={item.id}
               className="rounded-xl border border-genesis-border bg-genesis-surface p-4 shadow-sm"
             >
               <div className="flex items-start gap-3">
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-indigo-50 text-genesis-primary">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent text-genesis-primary">
                   <UserRound className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -41,19 +43,19 @@ export function RegistrationList({
                   <p className="mt-1 truncate text-xs text-genesis-muted">{item.campaignName}</p>
                   <p className="mt-1 text-xs text-genesis-neutral">{formatDateTime(item.createdAt)}</p>
                 </div>
-                <Badge tone={item.phone ? "green" : "gray"}>
+                {canReadPhone && <Badge tone={item.phone ? "green" : "gray"}>
                   {item.phone ? "Telefone" : "Sem telefone"}
-                </Badge>
+                </Badge>}
               </div>
               <div className="mt-4 grid gap-2 text-sm text-genesis-muted">
                 <span className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-genesis-neutral" />
                   {item.neighborhood}, {item.city}
                 </span>
-                <span className="flex items-center gap-2">
+                {canReadPhone && <span className="flex items-center gap-2">
                   <Phone className="h-4 w-4 text-genesis-neutral" />
                   {formatPhone(item.phone)}
-                </span>
+                </span>}
               </div>
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 <Button variant="outline" className="w-full" onClick={() => onView(item.id)}>
@@ -85,7 +87,7 @@ export function RegistrationList({
                 <th className="px-5 py-4">Ouvinte</th>
                 <th className="px-5 py-4">Campanha</th>
                 <th className="px-5 py-4">Localidade</th>
-                <th className="px-5 py-4">Telefone</th>
+                {canReadPhone && <th className="px-5 py-4">Telefone</th>}
                 <th className="px-5 py-4">Origem</th>
                 <th className="px-5 py-4">Data</th>
                 <th className="px-5 py-4 text-right">Ação</th>
@@ -93,11 +95,11 @@ export function RegistrationList({
             </thead>
             <tbody>
               {items.map((item) => {
-                const whatsApp = whatsappUrl(item.phone);
+                const whatsApp = canReadPhone ? whatsappUrl(item.phone) : null;
                 return (
                   <tr
                     key={item.id}
-                    className="border-b border-genesis-border text-sm last:border-0 hover:bg-indigo-50/45"
+                    className="border-b border-genesis-border text-sm last:border-0 hover:bg-accent/45"
                   >
                     <td className="px-5 py-4">
                       <p className="font-semibold text-genesis-text">{item.name}</p>
@@ -111,7 +113,7 @@ export function RegistrationList({
                       <p>{item.city}</p>
                       <p className="mt-1 text-xs text-genesis-neutral">{item.neighborhood}</p>
                     </td>
-                    <td className="px-5 py-4">
+                    {canReadPhone && <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         <Badge tone={item.phone ? "green" : "gray"}>{formatPhone(item.phone)}</Badge>
                         {whatsApp && (
@@ -126,7 +128,7 @@ export function RegistrationList({
                           </a>
                         )}
                       </div>
-                    </td>
+                    </td>}
                     <td className="px-5 py-4 text-genesis-muted">{sourceLabel(item.source)}</td>
                     <td className="whitespace-nowrap px-5 py-4 text-genesis-muted">
                       {formatDateTime(item.createdAt)}

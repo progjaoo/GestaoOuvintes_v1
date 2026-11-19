@@ -1,5 +1,7 @@
+import { hasGlobalPermission } from "../services/authorization-service.js";
 import type { FastifyPluginAsync } from "fastify";
-import { requireAdminRole, requireAuthentication } from "../plugins/auth.js";
+import { AppError } from "../lib/errors.js";
+import { requireAuthentication, requirePermission } from "../plugins/auth.js";
 import {
   registrationExportQuerySchema,
   registrationIdParamsSchema,
@@ -16,21 +18,39 @@ import { createCsv, createXlsx } from "../services/export-service.js";
 
 export const adminRegistrationRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", requireAuthentication);
+  const canRead = requirePermission("listener.read");
+  const canExport = requirePermission("registration.export");
 
-  app.get("/", async (request) => {
+  app.get("/", { preHandler: canRead }, async (request) => {
     const filters = registrationListQuerySchema.parse(request.query);
-    const { rows, total } = await listListenerRegistrations(filters);
-    return createPagination(rows, filters.page, filters.pageSize, total);
+    const canReadPhone = hasGlobalPermission(request.authz, "listener.phone.read");
+    if (!canReadPhone && filters.hasPhone !== undefined) {
+      throw new AppError(403, "PHONE_PERMISSION_REQUIRED", "Permissao para consultar telefone insuficiente.");
+    }
+    const { rows, total } = await listListenerRegistrations(filters, { canSearchPhone: canReadPhone });
+    return createPagination(
+      canReadPhone ? rows : rows.map((row) => ({ ...row, phone: null })),
+      filters.page,
+      filters.pageSize,
+      total,
+    );
   });
 
   app.get(
     "/export",
     {
-      preHandler: requireAdminRole,
+      preHandler: canExport,
     },
     async (request, reply) => {
       const { format, ...filters } = registrationExportQuerySchema.parse(request.query);
-      const rows = await getRegistrationsForExport(filters);
+      const canReadPhone = hasGlobalPermission(request.authz, "listener.phone.read");
+      if (!canReadPhone && filters.hasPhone !== undefined) {
+        throw new AppError(403, "PHONE_PERMISSION_REQUIRED", "Permissao para consultar telefone insuficiente.");
+      }
+      const rows = await getRegistrationsForExport(filters, {
+        canSearchPhone: canReadPhone,
+        canReadPhone,
+      });
       const date = new Date().toISOString().slice(0, 10);
 
       await auditExport({
@@ -63,8 +83,11 @@ export const adminRegistrationRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  app.get("/:id", async (request) => {
+  app.get("/:id", { preHandler: canRead }, async (request) => {
     const { id } = registrationIdParamsSchema.parse(request.params);
-    return getListenerRegistration(id);
+    const registration = await getListenerRegistration(id);
+    return hasGlobalPermission(request.authz, "listener.phone.read")
+      ? registration
+      : { ...registration, phone: null };
   });
 };

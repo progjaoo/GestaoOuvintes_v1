@@ -32,7 +32,7 @@ export function RichTextBlockEditor({
     onUpdate: ({ editor: activeEditor }) => onChange(activeEditor.getJSON() as EditorialTextBlock["content"]),
   });
 
-  if (!editor) return <div className="min-h-40 animate-pulse rounded-lg bg-neutral-100" />;
+  if (!editor) return <div className="min-h-40 animate-pulse rounded-lg bg-muted" />;
 
   const controls = [
     { label: "Negrito", icon: Bold, active: editor.isActive("bold"), run: () => editor.chain().focus().toggleBold().run() },
@@ -59,17 +59,17 @@ export function RichTextBlockEditor({
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border border-genesis-border bg-white">
-      <div role="toolbar" aria-label="Formatação do texto" className="flex flex-wrap items-center gap-1 border-b border-genesis-border bg-neutral-50 p-2">
+    <div className="overflow-hidden rounded-lg border border-genesis-border bg-genesis-surface">
+      <div role="toolbar" aria-label="Formatação do texto" className="flex flex-wrap items-center gap-1 border-b border-genesis-border bg-genesis-bg p-2">
         {controls.map(({ label, icon: Icon, active, run }) => (
-          <button key={label} type="button" aria-label={label} aria-pressed={active} onClick={run} className={`grid h-9 w-9 place-items-center rounded-md transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-genesis-primary ${active ? "bg-genesis-primary text-white" : "text-genesis-muted hover:bg-white hover:text-genesis-text"}`}>
+          <button key={label} type="button" aria-label={label} aria-pressed={active} onClick={run} className={`grid h-9 w-9 place-items-center rounded-md transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-genesis-primary ${active ? "bg-genesis-primary text-white" : "text-genesis-muted hover:bg-genesis-surface hover:text-genesis-text"}`}>
             <Icon size={17} aria-hidden="true" />
           </button>
         ))}
-        <button type="button" aria-label="Inserir link" onClick={addLink} className="grid h-9 w-9 place-items-center rounded-md text-genesis-muted hover:bg-white hover:text-genesis-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-genesis-primary"><Link2 size={17} /></button>
+        <button type="button" aria-label="Inserir link" onClick={addLink} className="grid h-9 w-9 place-items-center rounded-md text-genesis-muted hover:bg-genesis-surface hover:text-genesis-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-genesis-primary"><Link2 size={17} /></button>
         <span className="mx-1 h-6 border-l border-genesis-border" aria-hidden="true" />
-        <button type="button" aria-label="Desfazer" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()} className="grid h-9 w-9 place-items-center rounded-md text-genesis-muted hover:bg-white disabled:opacity-40"><Undo2 size={17} /></button>
-        <button type="button" aria-label="Refazer" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()} className="grid h-9 w-9 place-items-center rounded-md text-genesis-muted hover:bg-white disabled:opacity-40"><Redo2 size={17} /></button>
+        <button type="button" aria-label="Desfazer" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()} className="grid h-9 w-9 place-items-center rounded-md text-genesis-muted hover:bg-genesis-surface disabled:opacity-40"><Undo2 size={17} /></button>
+        <button type="button" aria-label="Refazer" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()} className="grid h-9 w-9 place-items-center rounded-md text-genesis-muted hover:bg-genesis-surface disabled:opacity-40"><Redo2 size={17} /></button>
       </div>
       <EditorContent editor={editor} />
     </div>

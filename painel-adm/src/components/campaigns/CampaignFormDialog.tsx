@@ -59,6 +59,7 @@ export function CampaignFormDialog({
   open,
   campaign,
   publishedInInstitutionalModal,
+  canPublish,
   submitting,
   onOpenChange,
   onSubmit,
@@ -66,6 +67,7 @@ export function CampaignFormDialog({
   open: boolean;
   campaign: Campaign | null;
   publishedInInstitutionalModal: boolean;
+  canPublish: boolean;
   submitting: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (input: CampaignInput, options: { publishInInstitutionalModal: boolean }) => Promise<void>;
@@ -127,7 +129,7 @@ export function CampaignFormDialog({
         },
         {
           publishInInstitutionalModal:
-            form.status === "active" && form.publishInInstitutionalModal,
+            canPublish && form.status === "active" && form.publishInInstitutionalModal,
         },
       );
     } catch (submitError) {
@@ -219,7 +221,7 @@ export function CampaignFormDialog({
             <option value="engagement">Engajamento</option>
           </Select>
         </Field>
-        <div className="rounded-xl border border-genesis-border bg-indigo-50 p-4 sm:col-span-2">
+        {canPublish && <div className="rounded-xl border border-genesis-border bg-accent p-4 sm:col-span-2">
           <label className="flex items-start gap-3 text-sm font-semibold text-genesis-text">
             <input
               type="checkbox"
@@ -242,7 +244,7 @@ export function CampaignFormDialog({
               Para publicar no site e aplicativo, altere o status para Ativa.
             </p>
           )}
-        </div>
+        </div>}
         <Field label="Versão do aviso *" htmlFor="campaign-privacy-version">
           <Input
             id="campaign-privacy-version"

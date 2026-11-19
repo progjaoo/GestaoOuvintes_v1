@@ -14,6 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:migrate": "tsx src/database/migrate.ts",
     "db:seed": "tsx src/database/seed.ts",
+    "admin:provision-super-admin": "tsx src/scripts/provision-super-admin.ts",
     "r2:check": "tsx scripts/check-r2.ts",
     "banner:check": "tsx scripts/check-banner-flow.ts",
     "test": "vitest run",

@@ -32,6 +32,7 @@ describe("CampaignFormDialog", () => {
         open
         campaign={null}
         publishedInInstitutionalModal={false}
+        canPublish
         submitting={false}
         onOpenChange={vi.fn()}
         onSubmit={onSubmit}
@@ -61,6 +62,7 @@ describe("CampaignFormDialog", () => {
         open
         campaign={null}
         publishedInInstitutionalModal={false}
+        canPublish
         submitting={false}
         onOpenChange={vi.fn()}
         onSubmit={onSubmit}
@@ -85,6 +87,7 @@ describe("CampaignFormDialog", () => {
         open
         campaign={null}
         publishedInInstitutionalModal={false}
+        canPublish
         submitting={false}
         onOpenChange={vi.fn()}
         onSubmit={onSubmit}
@@ -92,6 +95,34 @@ describe("CampaignFormDialog", () => {
     );
 
     fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: /salvar campanha/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][1]).toEqual({
+      publishInInstitutionalModal: false,
+    });
+  });
+
+  it("oculta a publicacao para usuarios sem permissao e nunca envia publicacao automatica", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <CampaignFormDialog
+        open
+        campaign={null}
+        publishedInInstitutionalModal={false}
+        canPublish={false}
+        submitting={false}
+        onOpenChange={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(screen.queryByText(/site institucional e aplicativo da Rádio 88 FM/i)).not.toBeInTheDocument();
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText("Status *"), {
+      target: { value: "active" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /salvar campanha/i }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));

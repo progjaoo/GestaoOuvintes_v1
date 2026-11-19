@@ -42,7 +42,7 @@ export function FeedImageEditor({ file, initialRatio = "original", onCancel, onC
   </>}>
     <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_14rem]">
       <div className="flex min-h-48 items-center justify-center overflow-hidden rounded-lg bg-neutral-200 p-3">
-        <div className="relative max-h-[50vh] w-full overflow-hidden bg-white" style={{ aspectRatio: aspect, maxWidth: `${50 * aspect}vh` }}>
+        <div className="relative max-h-[50vh] w-full overflow-hidden bg-genesis-surface" style={{ aspectRatio: aspect, maxWidth: `${50 * aspect}vh` }}>
           <img ref={image} src={url || undefined} alt="Prévia do recorte" onLoad={(event) => {
             const { naturalWidth: w, naturalHeight: h } = event.currentTarget;
             if (w * h > 40_000_000) { setError("A imagem deve ter no máximo 40 megapixels."); return; }

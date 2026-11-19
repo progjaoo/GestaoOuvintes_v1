@@ -1,0 +1,22 @@
+{
+  "event": {
+    "id": "fixture-enquete-20261116",
+    "summary": "Ter o dedo podre no amor pode ser influencia demoniaca?",
+    "description": "Durante um podcast, uma pastora falou sobre pessoas que sempre escolhem mal seus parceiros. Segundo ela, esse comportamento tambem pode ter origem espiritual.\n\nHa quem entenda que isso esta relacionado a falta de sabedoria. Voce conhece alguem que sempre escolhe a pessoa errada para se relacionar? Qual e a sua opiniao?",
+    "start": { "date": "2026-11-16" },
+    "end": { "date": "2026-11-17" }
+  },
+  "source": {
+    "calendarId": "fixture-88-enquete",
+    "allowedProgramIds": ["11111111-1111-4111-8111-111111111111"],
+    "defaultProgramId": "11111111-1111-4111-8111-111111111111",
+    "defaultMode": "message",
+    "identificationPolicy": "optional"
+  },
+  "schedule": {
+    "programs": [{ "id": "11111111-1111-4111-8111-111111111111", "name": "Bom Dia 88", "active": true }],
+    "editions": [{ "programId": "11111111-1111-4111-8111-111111111111", "startsAt": "2026-11-16T12:30:00Z", "endsAt": "2026-11-16T15:00:00Z" }],
+    "slots": [{ "id": "fixture-slot", "radioKey": "radio-88", "programId": "11111111-1111-4111-8111-111111111111", "active": true, "programActive": true, "weekday": 1, "startMinute": 570, "endMinute": 720, "validFrom": "2026-01-01", "validUntil": null }],
+    "exceptions": []
+  }
+}

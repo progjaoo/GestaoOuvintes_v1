@@ -2,7 +2,12 @@ import argon2 from "argon2";
 import { eq } from "drizzle-orm";
 import { env } from "../config/env.js";
 import { db, pool } from "./client.js";
-import { adminUsers, campaigns, campaignPlacements } from "./schema.js";
+import {
+  adminUsers,
+  campaigns,
+  campaignPlacements,
+  roles,
+} from "./schema.js";
 
 async function seed(): Promise<void> {
   const username = env.ADMIN_INITIAL_USERNAME.trim().toLocaleLowerCase("pt-BR");
@@ -27,6 +32,25 @@ async function seed(): Promise<void> {
     });
     console.info("Usuario administrativo inicial criado.");
   }
+
+  const admin = await db.query.adminUsers.findFirst({
+    where: eq(adminUsers.username, username),
+  });
+  if (!admin) {
+    throw new Error("Usuario administrativo inicial nao foi encontrado apos o seed.");
+  }
+
+  const legacyRole = await db.query.roles.findFirst({
+    where: eq(roles.key, admin.role),
+  });
+  if (!legacyRole) {
+    throw new Error(`Papel legado '${admin.role}' nao foi criado pelas migrations.`);
+  }
+
+  await pool.query(
+    "INSERT INTO admin_user_role (admin_user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [admin.id, legacyRole.id],
+  );
 
   const existingCampaign = await db.query.campaigns.findFirst({
     where: eq(campaigns.slug, env.CAMPAIGN_SLUG),

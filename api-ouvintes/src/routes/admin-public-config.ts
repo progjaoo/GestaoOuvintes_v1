@@ -1,12 +1,12 @@
 import type { FastifyPluginAsync } from "fastify";
-import { requireAdminRole, requireAuthentication } from "../plugins/auth.js";
+import { requireAuthentication, requirePermission } from "../plugins/auth.js";
 import { publishPublicConfigSnapshot } from "../services/public-config-snapshot.js";
 import { setPublicConfigSyncHeaders } from "../services/public-config-sync.js";
 
 export const adminPublicConfigRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", requireAuthentication);
 
-  app.post("/republish", { preHandler: requireAdminRole }, async (request, reply) => {
+  app.post("/republish", { preHandler: requirePermission("public_config.manage") }, async (request, reply) => {
     try {
       const result = await publishPublicConfigSnapshot();
       setPublicConfigSyncHeaders(reply, result.syncStatus, result.revision);
