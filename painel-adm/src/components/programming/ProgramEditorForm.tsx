@@ -20,10 +20,39 @@ export function ProgramEditorForm({ initial, busy, save }: { initial: RadioProgr
   const [preview, setPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const previewRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => {
     if (previewRef.current) URL.revokeObjectURL(previewRef.current);
   }, []);
+
+  function selectImage(selected?: File) {
+    if (!selected || busy || uploading) return;
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(selected.type)) {
+      toast.error('Escolha uma imagem JPEG, PNG, WebP ou AVIF.');
+      return;
+    }
+    if (selected.size > 10 * 1024 * 1024) {
+      toast.error('A imagem deve ter até 10 MiB.');
+      return;
+    }
+    if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    previewRef.current = URL.createObjectURL(selected);
+    setPreview(previewRef.current);
+    setFile(selected);
+  }
+
+  function openImagePicker() {
+    const input = fileInputRef.current;
+    if (!input) return;
+    // Keep the native picker synchronous with the user's gesture (Safari/Chromium).
+    try {
+      if (typeof input.showPicker === 'function') input.showPicker();
+      else input.click();
+    } catch {
+      toast.error('O navegador bloqueou o seletor. Arraste a imagem do Finder para a área de envio.');
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -68,18 +97,16 @@ export function ProgramEditorForm({ initial, busy, save }: { initial: RadioProgr
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-semibold"><ImagePlus aria-hidden="true" className="h-4 w-4 text-genesis-primary" />Imagem do programa</div>
           <p className="mt-1 text-xs leading-5 text-genesis-muted">Recomendado 1920 × 1080 px (16:9). JPEG, PNG, WebP ou AVIF; até 10 MiB. A imagem é pública e enviada ao R2 do ambiente atual.</p>
-          <Input className="mt-3" id="program-image" aria-label="Imagem do programa" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => {
-            const selected = event.target.files?.[0];
-            if (selected && selected.size > 10 * 1024 * 1024) {
-              toast.error('A imagem deve ter até 10 MiB.');
-              event.target.value = '';
-              return;
-            }
-            if (previewRef.current) URL.revokeObjectURL(previewRef.current);
-            previewRef.current = selected ? URL.createObjectURL(selected) : null;
-            setPreview(previewRef.current);
-            setFile(selected ?? null);
-          }} />
+          <div className="mt-3 rounded-md border border-dashed border-genesis-border p-3" role="group" aria-label="Selecionar ou arrastar imagem do programa"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => { event.preventDefault(); selectImage(event.dataTransfer.files[0]); }}>
+            <Button type="button" variant="outline" disabled={busy || uploading} onClick={openImagePicker}>
+              <ImagePlus aria-hidden="true" className="h-4 w-4" />Escolher imagem
+            </Button>
+            <p className="mt-2 break-all text-xs text-genesis-muted" role="status">{file ? file.name : 'Ou arraste uma imagem do Finder para esta área.'}</p>
+            <Input ref={fileInputRef} className="sr-only" tabIndex={-1} id="program-image" aria-label="Imagem do programa" type="file" accept="image/jpeg,image/png,image/webp,image/avif"
+              onChange={(event) => { selectImage(event.target.files?.[0]); event.target.value = ''; }} />
+          </div>
           {(image || imageAssetId || file) && <Button className="mt-3 w-full sm:w-auto" type="button" variant="outline" onClick={() => { if (previewRef.current) URL.revokeObjectURL(previewRef.current); setFile(null); setImageAssetId(null); setPreview(null); previewRef.current = null; }}><Trash2 aria-hidden="true" className="h-4 w-4" />Remover imagem do programa</Button>}
         </div>
         <div className="min-w-0 overflow-hidden rounded-md border border-genesis-border bg-genesis-surface">

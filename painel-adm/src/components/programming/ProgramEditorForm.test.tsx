@@ -22,3 +22,29 @@ describe('Program image and public presenter names',()=>{
   fireEvent.click(screen.getByRole('button',{name:'Remover imagem do programa'}));fireEvent.click(screen.getByRole('button',{name:'Salvar programa'}));await waitFor(()=>expect(save).toHaveBeenCalledWith(expect.objectContaining({imageAssetId:null,version:2})));
  });
 });
+
+describe('Explicit program image picker',()=>{
+ it('opens the native picker directly from a user click without submitting',()=>{
+  const save=vi.fn();render(<ProgramEditorForm initial={null} busy={false} save={save}/>);
+  const input=screen.getByLabelText('Imagem do programa') as HTMLInputElement;
+  const showPicker=vi.fn();Object.defineProperty(input,'showPicker',{value:showPicker,configurable:true});
+  fireEvent.click(screen.getByRole('button',{name:'Escolher imagem'}));
+  expect(showPicker).toHaveBeenCalledTimes(1);expect(save).not.toHaveBeenCalled();
+ });
+ it('falls back to input click where showPicker is unavailable',()=>{
+  render(<ProgramEditorForm initial={null} busy={false} save={vi.fn()}/>);
+  const input=screen.getByLabelText('Imagem do programa') as HTMLInputElement;
+  Object.defineProperty(input,'showPicker',{value:undefined,configurable:true});const click=vi.spyOn(input,'click');
+  fireEvent.click(screen.getByRole('button',{name:'Escolher imagem'}));expect(click).toHaveBeenCalledTimes(1);
+ });
+ it('accepts a Finder drag/drop and displays its filename and preview',()=>{
+  render(<ProgramEditorForm initial={null} busy={false} save={vi.fn()}/>);
+  fireEvent.drop(screen.getByRole('group',{name:'Selecionar ou arrastar imagem do programa'}),{dataTransfer:{files:[new File(['image'],'capa.png',{type:'image/png'})]}});
+  expect(screen.getByText('capa.png')).toBeInTheDocument();expect(screen.getByAltText('Prévia da imagem do programa')).toHaveAttribute('src','blob:program-test');
+ });
+ it('reports a blocked native dialog without a JavaScript alert',()=>{
+  const error=vi.spyOn(toast,'error');render(<ProgramEditorForm initial={null} busy={false} save={vi.fn()}/>);
+  Object.defineProperty(screen.getByLabelText('Imagem do programa'),'showPicker',{value:()=>{throw new DOMException('blocked','NotAllowedError');},configurable:true});
+  fireEvent.click(screen.getByRole('button',{name:'Escolher imagem'}));expect(error).toHaveBeenCalledWith(expect.stringContaining('Arraste a imagem'));
+ });
+});
