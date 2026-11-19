@@ -108,3 +108,5 @@ T09 e telas de Enquetes integrados no Docker radio88-feed, porta5181. Fase3 segu
 [Parte 3b: gestão visual da sincronização](plano-009-parte-3b.md). Tela integrada a Enquetes, OAuth/status, fonte somente leitura, Bom Dia 88 como padrão, sincronização manual e conferência privada. Painel: 142 testes, lint e build aprovados. API: 64 testes em Postgres descartável, migrations 0001–0026 repetidas, typecheck/build aprovados. OAuth real, leitura real do Calendar e migração no banco persistente não executados.
 
 Consulte também o [progresso do Plano 009](progresso.md) para o estado atual, dependências e próxima etapa.
+
+- [Seed idempotente de programas e grade reais](seed-programacao-real.md)

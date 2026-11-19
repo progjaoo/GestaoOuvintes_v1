@@ -21,7 +21,8 @@
     "test:watch": "vitest",
     "test:integration": "RUN_INTEGRATION_TESTS=true vitest run tests/integration",
     "test:compat:legacy": "sh ./scripts/test-legacy-compat.sh",
-    "participants:backfill": "tsx scripts/backfill-campaign-participations.ts"
+    "participants:backfill": "tsx scripts/backfill-campaign-participations.ts",
+    "db:seed:programming": "tsx src/scripts/seed-real-programming.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1091.0",
