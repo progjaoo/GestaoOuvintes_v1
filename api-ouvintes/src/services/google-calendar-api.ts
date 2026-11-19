@@ -11,6 +11,9 @@ export class GoogleCalendarSyncTokenExpired extends Error { readonly code='CALEN
 
 export function createGoogleCalendarApi(input:{clientId:string;clientSecret:string;allowedCalendarId:string;loadRefreshToken:()=>Promise<string>},fetcher:typeof fetch=fetch) {
   const calendarId=z.string().min(1).max(1024).parse(input.allowedCalendarId);
+  // Bound the initial history load; incremental sync must not include timeMin.
+  // Keep all future events so an unchanged distant event is never missed later.
+  const fullSyncTimeMin = new Date(Date.now() - 35 * 86400000).toISOString().slice(0, 10) + 'T00:00:00Z';
   let cached:{token:string;expiresAt:number}|undefined;
   let pending:Promise<string>|undefined;
   async function accessToken() {
@@ -38,6 +41,7 @@ export function createGoogleCalendarApi(input:{clientId:string;clientSecret:stri
       const url=new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
       url.searchParams.set('maxResults','2500');url.searchParams.set('showDeleted','true');url.searchParams.set('singleEvents','true');url.searchParams.set('timeZone','America/Sao_Paulo');
       if(request.syncToken)url.searchParams.set('syncToken',request.syncToken);
+      else url.searchParams.set('timeMin',fullSyncTimeMin);
       if(request.pageToken)url.searchParams.set('pageToken',request.pageToken);
       let response:Response;
       try{response=await fetcher(url,{method:'GET',headers:{authorization:`Bearer ${await accessToken()}`},signal:AbortSignal.timeout(10_000)});}

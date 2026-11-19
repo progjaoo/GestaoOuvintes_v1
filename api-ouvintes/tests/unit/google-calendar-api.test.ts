@@ -19,6 +19,7 @@ describe('Google Calendar read-only client', () => {
       expect(url.searchParams.get('singleEvents')).toBe('true');
       expect(url.searchParams.get('timeZone')).toBe('America/Sao_Paulo');
       expect(url.searchParams.get('syncToken')).toBe('cursor-previous');
+      expect(url.searchParams.has('timeMin')).toBe(false);
       expect(url.searchParams.get('pageToken')).toBe('page-2');
       return new Response(JSON.stringify({ items: [{ id: 'event-1' }], nextSyncToken: 'cursor-next' }), { status: 200 });
     });
@@ -30,6 +31,21 @@ describe('Google Calendar read-only client', () => {
     expect(result.items).toEqual([{ id: 'event-1' }]);
     expect(result.nextSyncToken).toBe('cursor-next');
     expect(fetcher.mock.calls.map(([, init]) => init?.method)).toEqual(['POST', 'GET']);
+  });
+
+  it('bounds initial history consistently across pages and keeps all future events', async () => {
+    const urls: URL[] = [];
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      if (String(input) === 'https://oauth2.googleapis.com/token') return tokenResponse();
+      urls.push(new URL(String(input)));
+      return new Response(JSON.stringify({items:[],nextSyncToken:'next'}),{status:200});
+    });
+    const api=createGoogleCalendarApi({clientId:'client',clientSecret:'secret',allowedCalendarId,loadRefreshToken:async()=>'refresh'},fetcher);
+    await api.listEvents({calendarId:allowedCalendarId,syncToken:null});
+    await api.listEvents({calendarId:allowedCalendarId,syncToken:null,pageToken:'next-page'});
+    expect(urls[0]!.searchParams.get('timeMin')).toBe(urls[1]!.searchParams.get('timeMin'));
+    expect(Date.parse(urls[0]!.searchParams.get('timeMin')!)).toBeLessThan(Date.now()-34*86400000);
+    expect(urls[0]!.searchParams.has('timeMax')).toBe(false);
   });
 
   it('rejects any calendar outside the server allowlist before requesting a token', async () => {
