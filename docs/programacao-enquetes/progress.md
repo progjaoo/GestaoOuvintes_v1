@@ -24,3 +24,9 @@
 - Titular autorizou publicar os ajustes finais. Backup Neon backup-before-program-image-colors-20261119 (br-winter-flower-axotspub), sem compute adicional.
 - Migracao 0030 aplicada em main pelo runner db:migrate. Backfill operacional leu apenas as seis capas publicas vinculadas a Production, com a mesma extracao Sharp validada localmente, limite de tamanho e sem regravar R2. Seis metadados atualizados em transacao e auditados; nenhum ID/arquivo de Preview copiado.
 - Typecheck/build API e 272 testes unitarios aprovados. API e publicacao do snapshot de Production pendentes de conferencia apos deploy. Enquetes e dados de ouvintes nao foram modificados pelo backfill.
+
+### Fechamento da publicacao das cores
+
+- API commit 1b8c6d5 em Production READY (9559w9vQEaTTByFDsEo1wP1241zm). Titular confirmou explicitamente a publicacao e a grade oficial foi publicada pela interface autenticada na revisao 10, namespace production/radio-88: 11 programas, 37 horarios e seis capas com imageEdgeColor.
+- Institucional oficial conferido com Temperatura Gospel: borda #FFB900, fundo derivado e altura 370px. Mini player preserva a logo colorida da radio. Nenhuma enquete foi reaberta, nenhuma resposta/cadastro foi criado e nenhuma escrita/exclusao foi feita no Google Agenda.
+- Backup Neon br-winter-flower-axotspub preservado; credencial temporaria de banco removida apos migracao/backfill. Retorno a API anterior exige preservar o parser compativel com imageEdgeColor ou republicar previamente um snapshot no formato antigo; nao remover a coluna/migracao para reverter a interface.
